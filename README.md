@@ -4,22 +4,19 @@
 Обычный сайт без сборки (HTML/CSS/JS), открывается внутри Telegram как мини-приложение
 и в любом браузере.
 
-Адрес — тот, что выдаст хостинг (Netlify), см. ниже.
+Адрес: **https://flqww132-ops.github.io/kitcjen/** (после включения GitHub Pages).
 
 ## Как запустить
 
-### 1. Выложить сайт (один раз)
+### 1. Включить GitHub Pages (один раз)
 
-**Netlify** (бесплатно, подходит для закрытого репозитория, сайт обновляется сам после каждого пуша):
+На бесплатном аккаунте GitHub Pages работает только для **публичного** репозитория. В этом репозитории
+только код приложения — ваши ТТК, идеи и фото здесь не хранятся (они в облаке Telegram и на телефоне),
+поэтому открыть его безопасно.
 
-1. Зайдите на https://app.netlify.com → **Sign up** → **GitHub** (вход через GitHub).
-2. **Add new project** → **Import an existing project** → **GitHub**.
-3. GitHub спросит, к каким репозиториям дать доступ: **Only select repositories** → `kitcjen` → **Install / Save**.
-4. Выберите репозиторий `kitcjen`. **Branch to deploy**: `main`.
-   Остальные поля не трогайте — настройки Netlify возьмёт из файла `netlify.toml`.
-5. **Deploy**. Через минуту появится адрес вида `https://случайное-имя.netlify.app`.
-6. Имя можно поменять: **Project configuration** → **Change project name** → например `kniga-kuhni`
-   → адрес станет `https://kniga-kuhni.netlify.app`.
+1. Репозиторий → **Settings** → внизу **Danger Zone** → **Change visibility** → **Change to public** → подтвердить.
+2. **Settings** → **Pages** → **Source**: «Deploy from a branch» → **Branch**: `main`, папка **/ (root)** → **Save**.
+3. Через 1–3 минуты приложение будет по адресу **https://flqww132-ops.github.io/kitcjen/**.
 
 ### 2. Создать бота и привязать приложение
 
@@ -28,7 +25,7 @@
    никому не показывайте — этому приложению он не нужен.
 2. **Кнопка меню** (кнопка слева от поля ввода в чате с ботом):
    `/mybots` → ваш бот → **Bot Settings** → **Menu Button** → **Configure menu button** →
-   отправьте адрес сайта (например, `https://kniga-kuhni.netlify.app`) → отправьте название кнопки, например `Книга кухни`.
+   отправьте адрес `https://flqww132-ops.github.io/kitcjen/` → отправьте название кнопки, например `Книга кухни`.
 3. **Main Mini App** (кнопка «Открыть» в профиле бота и в поиске):
    `/mybots` → ваш бот → **Bot Settings** → **Configure Mini App** → **Enable Mini App** → отправьте тот же адрес.
 4. Откройте чат с ботом → нажмите кнопку меню. Готово.
