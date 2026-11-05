@@ -70,9 +70,15 @@ function render(scrollTop, keepScroll = false) {
   oldEl.replaceWith(el);
   const y = window.scrollY;
   document.body.classList.toggle('is-form', !!s.form);
-  $('#title').textContent = typeof s.title === 'function' ? s.title() : s.title;
+  // Корневые экраны вкладок — с крупным заголовком (как в iOS), вложенные — с компактным
+  const isRoot = stack.length === 1;
+  const titleText = typeof s.title === 'function' ? s.title() : s.title;
+  const sub = isRoot && s.subtitle ? s.subtitle() : '';
+  document.body.classList.toggle('root', isRoot);
+  $('#title').textContent = titleText;
   $('#topActions').innerHTML = s.actions ? String(typeof s.actions === 'function' ? s.actions() : s.actions) : '';
-  el.innerHTML = String(s.render());
+  el.innerHTML = (isRoot ? String(html`<header class="lt"><h1>${titleText}</h1>${sub ? html`<div class="lt-sub">${sub}</div>` : ''}</header>`) : '')
+    + String(s.render());
   document.body.classList.toggle('has-bar', !!el.querySelector('.bottom-bar'));
   s.mount?.(el);
   const depth = stack.length > 1;
@@ -83,9 +89,15 @@ function render(scrollTop, keepScroll = false) {
   if (keepScroll) window.scrollTo(0, y);
   else if (scrollTop) window.scrollTo(0, 0);
   else window.scrollTo(0, s.scrollY || 0);
+  onScroll();
+}
+
+function onScroll() {
+  document.body.classList.toggle('scrolled', window.scrollY > (document.body.classList.contains('root') ? 40 : 4));
 }
 
 export function initNav() {
+  window.addEventListener('scroll', onScroll, { passive: true });
   document.querySelectorAll('#tabbar [data-tab]').forEach((b) =>
     b.addEventListener('click', () => { haptic('select'); setTab(b.dataset.tab); }));
   $('#navBack').addEventListener('click', () => back());

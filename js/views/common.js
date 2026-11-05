@@ -1,7 +1,7 @@
 // Общие кусочки интерфейса для экранов
 
-import { html, raw } from '../util.js';
-import { sortedList } from '../store.js';
+import { html, raw, norm, hash } from '../util.js';
+import { sortedList, get } from '../store.js';
 import { promptSheet } from '../ui.js';
 
 export const ICONS = {
@@ -21,6 +21,10 @@ export const ICONS = {
   file: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></svg>',
   text: '<svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h10M5 18h7"/></svg>',
   hand: '<svg viewBox="0 0 24 24"><path d="M5 19h14M7 15l8-8 3 3-8 8H7z"/></svg>',
+  tag: '<svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8" r="1.3"/></svg>',
+  home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9H3zM9 20v-6h6v6"/></svg>',
+  flame: '<svg viewBox="0 0 24 24"><path d="M12 3c1 4 6 6 6 11a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 2 3 4 1-2 1-5 1-8z"/></svg>',
+  download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
   warn: '<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.5"/></svg>',
 };
 export const icon = (name) => raw(`<span class="ico">${ICONS[name]}</span>`);
@@ -69,8 +73,29 @@ export function bindRefSelects(root, onPick) {
 export const fab = (act = 'add', label = 'Добавить') =>
   html`<button class="fab" data-act="${act}" aria-label="${label}">${icon('plus')}</button>`;
 
-export function emptyState(title, text, buttons = '') {
-  return html`<div class="empty"><div class="empty-title">${title}</div><p>${text}</p>${buttons}</div>`;
+export function emptyState(title, text, buttons = '', emoji = '') {
+  return html`<div class="empty">${emoji ? html`<div class="empty-emoji">${emoji}</div>` : ''}<div class="empty-title">${title}</div><p>${text}</p>${buttons}</div>`;
+}
+
+// Цвет и значок категории — чтобы список не был безликим
+const PALETTE = ['#FF7A1A', '#FF3B30', '#FF2D55', '#AF52DE', '#5856D6', '#007AFF', '#30B0C7', '#34C759', '#C99A00', '#A2845E'];
+const EMOJI = [
+  [/закус/, '🫒'], [/салат/, '🥗'], [/суп|бульон/, '🍲'], [/горяч|основн/, '🥘'], [/гарнир/, '🍚'],
+  [/соус/, '🥣'], [/десерт|сладк/, '🍰'], [/выпеч|хлеб|тест/, '🥐'], [/заготов|п\/ф|полуфаб/, '🔪'],
+  [/напит|коктейл|бар/, '🍹'], [/рыб|море/, '🐟'], [/мяс|стейк|гриль/, '🥩'], [/паст|итал/, '🍝'],
+  [/завтрак/, '🍳'], [/пицц/, '🍕'], [/сыр/, '🧀'], [/овощ|веган/, '🥦'], [/мороже/, '🍨'],
+];
+export function catStyle(id) {
+  const c = id ? get('categories', id) : null;
+  const name = c ? norm(c.name) : '';
+  const color = c ? PALETTE[parseInt(hash(c.id).slice(-4), 36) % PALETTE.length] : '#FF9500';
+  const emoji = (EMOJI.find(([re]) => re.test(name)) || [])[1] || '';
+  return { color, emoji, name: c?.name || '' };
+}
+export function catTag(id) {
+  const s = catStyle(id);
+  if (!s.name) return '';
+  return html`<span class="tag" style="--c:${s.color}">${s.name}</span>`;
 }
 
 export function segmented(name, value, options) {

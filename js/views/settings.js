@@ -1,11 +1,12 @@
 // Раздел «Настройки»: синхронизация, списки, резервная копия, очистка
 
-import { html, fmtDateTime, plural, blobToDataURL, dataURLToBlob } from '../util.js';
+import { html, raw, fmtDateTime, plural, blobToDataURL, dataURLToBlob } from '../util.js';
 import * as S from '../store.js';
 import { push, refresh, toast, confirmDialog, onActs, actionSheet, promptSheet, pickFile, showText, sheet } from '../ui.js';
 import { inTelegram, copyText, haptic } from '../tg.js';
 import { photoAll, photoPut, photoClear } from '../idb.js';
-import { icon, busy } from './common.js';
+import { icon, busy, segmented } from './common.js';
+import { getThemeMode, setThemeMode } from '../theme.js';
 
 const LISTS = {
   categories: { title: 'Категории', one: 'категорию', usage: () => [...S.list('recipes'), ...S.list('ideas')].map((r) => r.categoryId), field: 'categoryId', where: ['recipes', 'ideas'] },
@@ -25,7 +26,7 @@ function syncBlock() {
   else if (s.state === 'toobig') { state = 'Облако Telegram переполнено (лимит ~1024 ячейки по 4 КБ). Данные сохранены на устройстве. Удалите лишнее или сделайте резервную копию.'; cls = 'err'; }
   else if (s.state === 'error') { state = `Ошибка синхронизации: ${s.error}. Данные сохранены на устройстве, попробуем ещё раз.`; cls = 'err'; }
   else state = s.lastSync ? `Последняя синхронизация ${fmtDateTime(s.lastSync)}` : 'Ещё не синхронизировано';
-  return html`<div class="card">
+  return html`<div class="card sync-card">
     <div class="card-title">Синхронизация</div>
     <div class="sync-state ${cls}">${state}</div>
     ${s.usage ? html`<div class="muted small">Облако: занято ${s.usage.keys} из ${s.usage.max} ячеек</div>` : ''}
@@ -44,33 +45,35 @@ export function settingsScreen() {
     title: 'Настройки',
     render() {
       const c = (k) => S.list(k).length;
+      const row = (act, color, ico, label, extra = '', attrs = '') => html`<button class="menu-row" data-act="${act}" ${raw(attrs)}>
+        <span class="mr-ico" style="--c:${color}">${icon(ico)}</span><span class="mr-label">${label}</span>${extra ? html`<small>${extra}</small>` : ''}</button>`;
       return html`
         ${syncBlock()}
-        <div class="card">
-          <div class="card-title">Списки</div>
-          <button class="menu-row" data-act="list" data-k="categories"><span>Категории</span><small>${c('categories')}</small></button>
-          <button class="menu-row" data-act="list" data-k="restaurants"><span>Рестораны / источники</span><small>${c('restaurants')}</small></button>
-          <button class="menu-row" data-act="list" data-k="stations"><span>Цеха и станции</span><small>${c('stations')}</small></button>
+        <div class="group-title">Оформление</div>
+        <div class="card">${segmented('theme', getThemeMode(), [{ id: 'light', label: 'Светлая' }, { id: 'dark', label: 'Тёмная' }, { id: 'auto', label: 'Авто' }])}</div>
+        <p class="hint pad-x">«Авто» — светлая или тёмная, как настроено на телефоне.</p>
+        <div class="group-title">Списки</div>
+        <div class="card list-card">
+          ${row('list', '#FF9500', 'tag', 'Категории', c('categories'), 'data-k="categories"')}
+          ${row('list', '#007AFF', 'home', 'Рестораны / источники', c('restaurants'), 'data-k="restaurants"')}
+          ${row('list', '#34C759', 'flame', 'Цеха и станции', c('stations'), 'data-k="stations"')}
         </div>
-        <div class="card">
-          <div class="card-title">Резервная копия</div>
-          <div class="stack">
-            <button class="btn" data-act="backup-file">Сохранить файл (с фото)</button>
-            <button class="btn" data-act="backup-text">${icon('copy')} Скопировать текстом (без фото)</button>
-            <button class="btn ghost" data-act="restore-file">Восстановить из файла</button>
-            <button class="btn ghost" data-act="restore-text">Восстановить из текста</button>
-          </div>
-          <p class="hint">В копии: ${c('recipes')} ТТК, ${c('ideas')} ${plural(c('ideas'), 'идея', 'идеи', 'идей')}, ${c('equipment')} поз. оборудования, ${c('prepItems')} поз. заготовок.</p>
+        <div class="group-title">Резервная копия</div>
+        <div class="card list-card">
+          ${row('backup-file', '#5856D6', 'download', 'Сохранить файл (с фото)')}
+          ${row('backup-text', '#30B0C7', 'copy', 'Скопировать текстом (без фото)')}
+          ${row('restore-file', '#AF52DE', 'file', 'Восстановить из файла')}
+          ${row('restore-text', '#A2845E', 'text', 'Восстановить из текста')}
         </div>
-        <div class="card">
-          <div class="card-title">Очистка</div>
-          <button class="btn ghost danger wide" data-act="wipe">${icon('trash')} Удалить все данные</button>
-          <p class="hint">Удалит всё на этом устройстве и в облаке Telegram. Перед этим лучше сохранить резервную копию.</p>
-        </div>
+        <p class="hint pad-x">В копии: ${c('recipes')} ТТК, ${c('ideas')} ${plural(c('ideas'), 'идея', 'идеи', 'идей')}, ${c('equipment')} поз. оборудования, ${c('prepItems')} поз. заготовок.</p>
+        <div class="group-title">Очистка</div>
+        <div class="card list-card">${row('wipe', '#FF3B30', 'trash', html`<span class="danger-text">Удалить все данные</span>`)}</div>
+        <p class="hint pad-x">Удалит всё на этом устройстве и в облаке Telegram. Перед этим лучше сохранить резервную копию.</p>
         <div class="muted small center">Книга кухни ${S.APP_VERSION} · схема данных ${S.SCHEMA_VERSION}</div>`;
     },
     mount(el) {
       onActs(el, {
+        seg: (t) => { setThemeMode(t.dataset.v); haptic('select'); refresh(); },
         sync: async () => { await S.syncNow(); refresh(); },
         list: (t) => push(listEditor(t.dataset.k)),
         'backup-file': backupFile,

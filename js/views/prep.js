@@ -80,9 +80,10 @@ function dayView() {
     </div>`;
   };
   return html`
-    <div class="card">
-      <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">${doneN} из ${items.length}</span></div>
-      <div class="progress"><div style="width:${pct}%"></div></div>
+    <div class="card day-card">
+      <svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" class="ring-bg"/><circle cx="22" cy="22" r="18" class="ring-fg" style="stroke-dasharray:${(113.1 * pct / 100).toFixed(1)} 113.1"/></svg>
+      <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">Готово ${doneN} из ${items.length}${pct === 100 && items.length ? ' 🎉' : ''}</span></div>
+      <div class="ring-pct">${pct}%</div>
     </div>
     ${items.length ? grouped(items).map((g) => html`<div class="group-title">${g.name}</div><div class="card plist">${g.items.map(row)}</div>`)
       : html`<div class="empty small">На этот день норм нет</div>`}
@@ -130,12 +131,13 @@ export function prepScreen() {
   return {
     tab: 'prep',
     title: 'Заготовки',
+    subtitle: () => fmtDayLong(new Date()),
     onLeave: flushLeft,
     render() {
       const any = S.list('prepItems').length;
       return html`
         <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }])}</div>
-        ${!any ? emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу и норму на каждый день недели.', html`<button class="btn primary" data-act="add">Добавить позицию</button>`)
+        ${!any ? emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу и норму на каждый день недели.', html`<button class="btn primary" data-act="add">Добавить позицию</button>`, '🔪')
           : st.mode === 'week' ? weekView() : dayView()}
         ${fab()}`;
     },

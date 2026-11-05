@@ -43,7 +43,7 @@ export async function photoURL(id) {
   if (urlCache.has(id)) return urlCache.get(id);
   const rec = await photoGet(id).catch(() => null);
   const url = rec ? URL.createObjectURL(rec.blob) : null;
-  urlCache.set(id, url);
+  if (url) urlCache.set(id, url); // «нет фото» не запоминаем — оно может появиться после восстановления
   return url;
 }
 

@@ -5,7 +5,7 @@ import * as S from '../store.js';
 import { push, back, replace, refresh, toast, confirmDialog, onActs, actionSheet } from '../ui.js';
 import { haptic } from '../tg.js';
 import { IDEA_STATUSES, statusLabel, parseIdeasText, CLAUDE_IDEAS_PROMPT, emptyRecipe } from '../textfmt.js';
-import { refSelect, bindRefSelects, fab, emptyState, chips, segmented, icon } from './common.js';
+import { refSelect, bindRefSelects, fab, emptyState, chips, segmented, icon, catTag } from './common.js';
 import { recipeForm, recipeDetail, pasteScreen } from './ttk.js';
 
 const st = { status: '' };
@@ -16,7 +16,7 @@ function ideaCard(i) {
   return html`<button class="card icard" data-act="open" data-id="${i.id}">
     <div class="ic-top"><span class="rc-title">${i.title}</span><span class="badge st-${i.status}">${statusLabel(i.status)}</span></div>
     ${i.description ? html`<div class="ic-desc">${i.description}</div>` : ''}
-    <div class="rc-meta">${cat ? html`<span class="tag">${cat}</span>` : ''}${hasRecipe ? html`<span class="src">есть ТТК</span>` : ''}</div>
+    <div class="rc-meta">${cat ? catTag(i.categoryId) : ''}${hasRecipe ? html`<span class="has-ttk">${icon('check')} есть ТТК</span>` : ''}</div>
   </button>`;
 }
 
@@ -24,6 +24,7 @@ export function ideasList() {
   return {
     tab: 'ideas',
     title: 'Идеи',
+    subtitle: () => { const n = S.list('ideas').length; return n ? `${n} ${plural(n, 'идея', 'идеи', 'идей')}` : 'Что попробовать'; },
     render() {
       const all = S.list('ideas');
       const counts = Object.fromEntries(IDEA_STATUSES.map((s) => [s.id, all.filter((i) => i.status === s.id).length]));
@@ -32,7 +33,7 @@ export function ideasList() {
       return html`
         <div class="toolbar sticky">${chips('status', st.status, [{ id: '', label: 'Все', count: all.length }, ...IDEA_STATUSES.map((s) => ({ ...s, count: counts[s.id] }))])}</div>
         ${!all.length ? emptyState('Идей пока нет', 'Запишите первую идею или вставьте список, который прислал Claude.', html`
-          <div class="stack"><button class="btn primary" data-act="new">Новая идея</button><button class="btn" data-act="paste">${icon('text')} Вставить идеи из текста</button></div>`)
+          <div class="stack"><button class="btn primary" data-act="new">Новая идея</button><button class="btn" data-act="paste">${icon('text')} Вставить идеи из текста</button></div>`, '💡')
         : items.length ? items.map(ideaCard) : html`<div class="empty small">В этом статусе пусто</div>`}
         ${fab()}`;
     },

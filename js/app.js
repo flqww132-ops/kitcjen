@@ -1,6 +1,7 @@
 // Точка входа «Книги кухни»
 
 import { initTelegram } from './tg.js';
+import { applyTheme } from './theme.js';
 import * as S from './store.js';
 import { registerTab, setTab, initNav, top, refresh, toast, getTab } from './ui.js';
 import { requestPersist } from './idb.js';
@@ -25,6 +26,7 @@ function syncDot() {
 
 async function main() {
   initTelegram();
+  applyTheme();
   await S.loadLocal();
   registerTab('ttk', recipesList);
   registerTab('ideas', ideasList);
@@ -45,7 +47,10 @@ async function main() {
   });
   S.onSync(() => {
     syncDot();
-    if (top()?.tab === 'settings' && top()?.title === 'Настройки') refresh();
+    if (top()?.tab === 'settings' && top()?.title === 'Настройки') {
+      const card = document.querySelector('.sync-card');
+      if (card) refresh();
+    }
   });
   syncDot();
   S.initSync();

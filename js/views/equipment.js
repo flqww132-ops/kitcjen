@@ -31,7 +31,7 @@ function sorted(items) {
 }
 
 function eqCard(e) {
-  return html`<div class="card ecard ${e.status === 'received' ? 'done' : ''}">
+  return html`<div class="card ecard u-line-${e.urgency} ${e.status === 'received' ? 'done' : ''}">
     <button class="ec-main" data-act="open" data-id="${e.id}">
       <div class="ic-top"><span class="rc-title">${e.name}</span><span class="badge u-${e.urgency}">${uLabel(e.urgency)}</span></div>
       <div class="rc-sub">${e.qty ? html`<b>${e.qty}</b>` : ''}${e.qty && e.supplier ? ' · ' : ''}${e.supplier || ''}</div>
@@ -63,7 +63,8 @@ export function equipmentText(items) {
 export function equipmentList() {
   return {
     tab: 'equip',
-    title: 'Оборудование',
+    title: 'Дозаказ',
+    subtitle: () => { const n = S.list('equipment').filter((e) => e.status === 'need').length; return n ? `${n} к заказу` : 'Оборудование и инвентарь'; },
     render() {
       const all = S.list('equipment');
       const count = (f) => all.filter(f).length;
@@ -76,7 +77,7 @@ export function equipmentList() {
       const toOrder = all.filter((e) => e.status === 'need').length;
       return html`
         <div class="toolbar sticky">${chips('status', st.status, filters)}</div>
-        ${!all.length ? emptyState('Список пуст', 'Добавьте, что нужно дозаказать: ножи, гастроёмкости, термощупы…', html`<button class="btn primary" data-act="add">Добавить позицию</button>`)
+        ${!all.length ? emptyState('Список пуст', 'Добавьте, что нужно дозаказать: ножи, гастроёмкости, термощупы…', html`<button class="btn primary" data-act="add">Добавить позицию</button>`, '🧰')
           : html`
             ${toOrder ? html`<button class="btn wide mb" data-act="share">${icon('share')} Поделиться списком к заказу (${toOrder})</button>` : ''}
             <div class="muted small pad-x">Сортировка: сначала срочные</div>

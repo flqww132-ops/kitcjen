@@ -6,7 +6,7 @@ import { push, back, replace, refresh, toast, actionSheet, confirmDialog, onActs
 import { shareText, copyText, haptic } from '../tg.js';
 import { addPhoto, deletePhoto, hydratePhotos, photoURL } from '../photos.js';
 import { recipeToText, parseRecipesText, emptyRecipe, CLAUDE_TTK_PROMPT } from '../textfmt.js';
-import { icon, refSelect, bindRefSelects, fab, emptyState, segmented, busy, inNum } from './common.js';
+import { icon, refSelect, bindRefSelects, fab, emptyState, segmented, busy, inNum, catStyle, catTag } from './common.js';
 
 // ---- Расчёты ----------------------------------------------------------------------------------
 export function wastePct(b, n) {
@@ -64,12 +64,14 @@ function recipeCard(r) {
   const n = (r.ingredients || []).length;
   const q = norm(listState.q);
   const hit = q && !norm(r.name).includes(q) ? (r.ingredients || []).find((i) => norm(i.name).includes(q)) : null;
+  const cs = catStyle(r.categoryId);
   return html`<button class="card rcard" data-act="open" data-id="${r.id}">
-    ${ph ? html`<div class="ph thumb"><img data-photo="${ph.id}" alt=""></div>` : ''}
+    ${ph ? html`<div class="ph thumb"><img data-photo="${ph.id}" alt=""></div>`
+      : html`<div class="avatar" style="--c:${cs.color}">${cs.emoji || (r.name || '?').trim().charAt(0).toUpperCase()}</div>`}
     <div class="rc-body">
       <div class="rc-title">${r.name || 'Без названия'}</div>
       <div class="rc-meta">
-        ${cat ? html`<span class="tag">${cat}</span>` : ''}
+        ${cat ? catTag(r.categoryId) : ''}
         <span class="src ${src ? '' : 'muted'}">${src || 'источник не указан'}</span>
       </div>
       <div class="rc-sub">${n} ${plural(n, 'ингредиент', 'ингредиента', 'ингредиентов')}${r.yieldAmount != null ? ` · выход ${amount(r.yieldAmount, r.yieldUnit)}` : ''}${r.portions ? ` · ${fmtNum(r.portions)} порц.` : ''}</div>
@@ -95,16 +97,17 @@ export function recipesList() {
           <button class="btn primary" data-act="new">${icon('hand')} Вручную</button>
           <button class="btn" data-act="file">${icon('file')} Из файла (Excel, Word, PDF)</button>
           <button class="btn" data-act="text">${icon('text')} Вставить из текста</button>
-        </div>`));
+        </div>`, '📖'));
       return;
     }
-    box.innerHTML = String(html`<div class="count">${items.length === total ? `${total} ${plural(total, 'карта', 'карты', 'карт')}` : `Найдено ${items.length} из ${total}`}</div>
+    box.innerHTML = String(html`${items.length !== total ? html`<div class="count">Найдено ${items.length} из ${total}</div>` : ''}
       ${items.length ? items.map(recipeCard) : html`<div class="empty small">Ничего не найдено</div>`}`);
     hydratePhotos(box);
   };
   return {
     tab: 'ttk',
     title: 'ТТК',
+    subtitle: () => { const n = S.list('recipes').length; return n ? `${n} ${plural(n, 'карта', 'карты', 'карт')}` : 'Технико-технологические карты'; },
     render: () => html`
       <div class="toolbar sticky">
         <label class="search">${icon('search')}<input id="rq" type="search" placeholder="Поиск по названию и продуктам" value="${listState.q}" enterkeyhint="search"></label>
@@ -198,7 +201,7 @@ export function recipeDetail(id) {
           <button class="ph" data-act="photo" data-id="${p.id}"><img data-photo="${p.id}" alt=""><span class="ph-kind">${p.kind === 'plating' ? 'подача' : 'блюдо'}</span><span class="ph-miss">фото на другом устройстве</span></button>`)}</div>` : ''}
         <div class="card">
           <h2 class="d-title">${r.name}</h2>
-          <div class="rc-meta">${cat ? html`<span class="tag">${cat}</span>` : ''}<span class="src ${src ? '' : 'muted'}">${src || 'источник не указан'}</span></div>
+          <div class="rc-meta">${cat ? catTag(r.categoryId) : ''}<span class="src ${src ? '' : 'muted'}">${src || 'источник не указан'}</span></div>
         </div>
         ${scaleCard(r)}
         <div class="card"><div class="card-title">Ингредиенты</div><div id="ingbox">${ingTable(r, k)}</div></div>

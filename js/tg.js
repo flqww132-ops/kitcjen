@@ -15,17 +15,6 @@ export function initTelegram() {
   try { W.expand(); } catch (e) { /* нет */ }
   // Не закрывать приложение свайпом вниз
   if (ver('7.7')) try { W.disableVerticalSwipes(); } catch (e) { /* нет */ }
-  applyHeaderColors();
-  W.onEvent?.('themeChanged', applyHeaderColors);
-}
-
-function applyHeaderColors() {
-  if (!ver('6.1')) return;
-  try {
-    W.setHeaderColor('secondary_bg_color');
-    W.setBackgroundColor('secondary_bg_color');
-    if (ver('7.10')) W.setBottomBarColor?.('secondary_bg_color');
-  } catch (e) { /* нет */ }
 }
 
 export function haptic(kind = 'light') {
