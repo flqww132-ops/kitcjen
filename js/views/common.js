@@ -1,0 +1,95 @@
+// Общие кусочки интерфейса для экранов
+
+import { html, raw } from '../util.js';
+import { sortedList } from '../store.js';
+import { promptSheet } from '../ui.js';
+
+export const ICONS = {
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M12 3v13M7 8l5-5 5 5"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  camera: '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  file: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></svg>',
+  text: '<svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h10M5 18h7"/></svg>',
+  hand: '<svg viewBox="0 0 24 24"><path d="M5 19h14M7 15l8-8 3 3-8 8H7z"/></svg>',
+  warn: '<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.5"/></svg>',
+};
+export const icon = (name) => raw(`<span class="ico">${ICONS[name]}</span>`);
+
+// Выпадающий список из справочника + «Добавить…»
+export function refSelect(coll, value, { field, empty = '— не выбрано —', addLabel = '＋ Добавить…', required = false } = {}) {
+  const items = sortedList(coll);
+  const isNew = value && value.startsWith('new:');
+  return html`<select class="inp ${required && !value ? 'need' : ''}" data-f="${field}" data-ref="${coll}">
+    <option value="" ${!value ? 'selected' : ''}>${empty}</option>
+    ${items.map((it) => html`<option value="${it.id}" ${it.id === value ? 'selected' : ''}>${it.name}</option>`)}
+    ${isNew ? html`<option value="${value}" selected>${value.slice(4)} (новый)</option>` : ''}
+    <option value="__add">${addLabel}</option>
+  </select>`;
+}
+
+// Обработка «＋ Добавить…» в выпадающем списке. onPick(value) — новое значение.
+export function bindRefSelects(root, onPick) {
+  root.addEventListener('change', async (e) => {
+    const sel = e.target.closest('select[data-ref]');
+    if (!sel) return;
+    if (sel.value === '__add') {
+      const titles = { categories: 'Новая категория', restaurants: 'Новый ресторан', stations: 'Новый цех' };
+      const name = await promptSheet(titles[sel.dataset.ref] || 'Новое значение', { placeholder: 'Название' });
+      if (!name) {
+        sel.value = sel.dataset.prev || '';
+        return;
+      }
+      const existing = sortedList(sel.dataset.ref).find((x) => x.name.toLowerCase() === name.toLowerCase());
+      const v = existing ? existing.id : 'new:' + name;
+      if (!existing) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = name + ' (новый)';
+        sel.insertBefore(opt, sel.querySelector('option[value="__add"]'));
+      }
+      sel.value = v;
+    }
+    sel.dataset.prev = sel.value;
+    sel.classList.remove('need');
+    onPick(sel.dataset.f, sel.value, sel);
+  });
+  root.querySelectorAll('select[data-ref]').forEach((s) => { s.dataset.prev = s.value; });
+}
+
+export const fab = (act = 'add', label = 'Добавить') =>
+  html`<button class="fab" data-act="${act}" aria-label="${label}">${icon('plus')}</button>`;
+
+export function emptyState(title, text, buttons = '') {
+  return html`<div class="empty"><div class="empty-title">${title}</div><p>${text}</p>${buttons}</div>`;
+}
+
+export function segmented(name, value, options) {
+  return html`<div class="seg" data-seg="${name}">${options.map((o) =>
+    html`<button class="${o.id === value ? 'on' : ''}" data-act="seg" data-seg="${name}" data-v="${o.id}">${o.label}</button>`)}</div>`;
+}
+
+export function chips(name, value, options) {
+  return html`<div class="chips" data-chips="${name}">${options.map((o) =>
+    html`<button class="chip ${o.id === value ? 'on' : ''}" data-act="chip" data-chips="${name}" data-v="${o.id}">${o.label}${o.count != null ? html` <b>${o.count}</b>` : ''}</button>`)}</div>`;
+}
+
+// Полупрозрачная заглушка «Подождите…»
+export function busy(msg) {
+  const el = document.createElement('div');
+  el.className = 'busy';
+  el.innerHTML = String(html`<div class="busy-box"><div class="spinner"></div><div>${msg}</div></div>`);
+  document.body.appendChild(el);
+  return () => el.remove();
+}
+
+export const inNum = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));

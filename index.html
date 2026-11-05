@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>Книга кухни</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232481cc'/%3E%3Cpath d='M10 7v8a3 3 0 0 0 2 2.8V25h2v-7.2A3 3 0 0 0 16 15V7h-1.5v6h-1V7h-1v6h-1V7zM20 7c-1.7 1.5-2.5 4-2.5 7v3H20v8h2V7z' fill='%23fff'/%3E%3C/svg%3E">
+  <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
+  <link rel="stylesheet" href="css/app.css?v=1">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <button id="navBack" class="icon-btn" hidden aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h1 id="title">Книга кухни</h1>
+      <div id="topActions"></div>
+      <span id="syncDot" class="sync-dot"></span>
+    </header>
+    <main id="screen"><div class="empty"><div class="spinner"></div></div></main>
+    <nav id="tabbar">
+      <button data-tab="ttk"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM9 10h7M9 14h7M9 18h4"/></svg><span>ТТК</span></button>
+      <button data-tab="ideas"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/></svg><span>Идеи</span></button>
+      <button data-tab="equip"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM9 7V4h6v3M4 12h16"/></svg><span>Дозаказ</span></button>
+      <button data-tab="prep"><svg viewBox="0 0 24 24"><path d="M9 5h11M9 12h11M9 19h11M4 5l1 1 2-2M4 12l1 1 2-2M4 19l1 1 2-2"/></svg><span>Заготовки</span></button>
+      <button data-tab="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Настройки</span></button>
+    </nav>
+  </div>
+  <div id="sheet-root"></div>
+  <div id="toast"></div>
+  <noscript>Для работы нужен JavaScript.</noscript>
+  <script type="module" src="js/app.js?v=1"></script>
+</body>
+</html>
