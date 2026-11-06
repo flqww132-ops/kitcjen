@@ -541,3 +541,47 @@ body:not(.root) .fab { display: none; }
   .avatar { background: var(--accent-soft); color: var(--accent-text); }
   .tag { background: var(--accent-soft); color: var(--accent-text); }
 }
+
+/* ---- Время «Сделать к», напоминания, таймеры ---- */
+.chips.wrap { flex-wrap: wrap; overflow: visible; margin: 0 0 12px; padding: 0; }
+.chips.wrap .chip { padding: 8px 13px; font-size: 14px; box-shadow: none; background: var(--field); border-color: transparent; }
+.dur { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.dur label { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dur .inp { text-align: center; font-size: 22px; font-weight: 700; padding: 10px 4px; }
+.dur small { font-size: 12px; font-weight: 600; color: var(--hint); }
+.time-big { font-size: 28px; font-weight: 700; text-align: center; min-height: 60px; }
+
+.timers { padding-top: 14px; padding-bottom: 6px; }
+.trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 0.5px solid var(--sep); }
+.trow:first-of-type { border-top: 0; }
+.t-main { flex: 1; min-width: 0; }
+.t-label { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-sub { font-size: 13px; color: var(--hint); }
+.t-count { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--accent-text); }
+.trow.over .t-count { color: var(--ok-text); animation: pulse .8s infinite alternate; }
+
+.pr-timer { color: var(--accent-text); }
+.pr-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.pr-time { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
+.pr-time .ico svg, .pr-rem .ico svg { width: 15px; height: 15px; }
+.pr-time.empty { background: var(--field); color: var(--hint); font-weight: 600; }
+.pr-time.custom { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pr-time.late { background: rgba(255, 59, 48, .14); color: var(--danger); }
+.pr-rem { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; color: var(--hint); }
+.prow.late:not(.done) .pr-name { color: var(--danger); }
+
+.dgrid { display: grid; grid-template-columns: 34px 1fr 1.25fr 36px; gap: 6px 8px; align-items: center; }
+.dg-h { font-size: 12px; font-weight: 600; color: var(--hint); padding-left: 4px; }
+.dg-day { font-weight: 700; color: var(--hint); text-align: center; }
+.dg-day.all { color: var(--accent-text); font-size: 13px; }
+.dgrid .inp { min-height: 44px; padding: 8px 10px; text-align: center; }
+.dgrid input[type="time"] { font-variant-numeric: tabular-nums; }
+.dgrid .icon-btn { width: 36px; height: 36px; }
+.dgrid .icon-btn svg { width: 16px; height: 16px; }
+
+.rchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rchip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font-weight: 650; font-size: 14px; }
+.rchip .ico svg { width: 15px; height: 15px; }
+.rchip button { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--accent-text); }
+.rchip button svg { width: 14px; height: 14px; stroke-width: 2.6; }
+.wtime { display: block; font-size: 10px; color: var(--hint); font-variant-numeric: tabular-nums; margin-top: 1px; }

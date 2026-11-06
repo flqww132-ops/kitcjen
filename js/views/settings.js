@@ -7,6 +7,7 @@ import { inTelegram, copyText, haptic } from '../tg.js';
 import { photoAll, photoPut, photoClear } from '../idb.js';
 import { icon, busy, segmented } from './common.js';
 import { getThemeMode, setThemeMode } from '../theme.js';
+import { botUrl, setBotUrl, remState, testBot, syncReminders } from '../reminders.js';
 
 const LISTS = {
   categories: { title: 'Категории', one: 'категорию', usage: () => [...S.list('recipes'), ...S.list('ideas')].map((r) => r.categoryId), field: 'categoryId', where: ['recipes', 'ideas'] },
@@ -39,6 +40,29 @@ function syncBlock() {
   </div>`;
 }
 
+
+function remBlock() {
+  const url = botUrl();
+  const r = remState;
+  let state, cls = '';
+  if (!url) state = 'Не подключено. Напоминания о заготовках и таймеры приходят в чат с ботом, когда подключён бот-напоминальщик.';
+  else if (!inTelegram) { state = 'Работает только когда приложение открыто в Telegram.'; cls = 'warn'; }
+  else if (r.state === 'ok') { state = `Подключено. В очереди: ${r.count ?? 0}${r.next ? `, ближайшее ${fmtDateTime(r.next)}` : ''}.`; cls = 'ok'; }
+  else if (r.state === 'syncing') state = 'Отправляю расписание боту…';
+  else if (r.state === 'error') { state = `Ошибка: ${r.message}`; cls = 'err'; }
+  else state = 'Подключено.';
+  return html`<div class="group-title">Напоминания в Telegram</div>
+    <div class="card rem-card">
+      <div class="sync-state ${cls}">${state}</div>
+      <label class="fld"><span>Адрес бота-напоминальщика</span><input class="inp" id="botUrl" inputmode="url" value="${url}" placeholder="https://kniga-kuhni-bot.….workers.dev" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <div class="row gap">
+        <button class="btn primary grow" data-act="bot-save">${icon('send')} Сохранить и проверить</button>
+        ${url && inTelegram ? html`<button class="btn icon-only" data-act="bot-sync" aria-label="Обновить">↻</button>` : ''}
+      </div>
+      <p class="hint">Как подключить бота — инструкция в репозитории: папка <b>bot</b>, файл README.</p>
+    </div>`;
+}
+
 export function settingsScreen() {
   return {
     tab: 'settings',
@@ -49,6 +73,7 @@ export function settingsScreen() {
         <span class="mr-ico" style="--c:${color}">${icon(ico)}</span><span class="mr-label">${label}</span>${extra ? html`<small>${extra}</small>` : ''}</button>`;
       return html`
         ${syncBlock()}
+        ${remBlock()}
         <div class="group-title">Оформление</div>
         <div class="card">${segmented('theme', getThemeMode(), [{ id: 'light', label: 'Светлая' }, { id: 'dark', label: 'Тёмная' }, { id: 'auto', label: 'Авто' }])}</div>
         <p class="hint pad-x">«Авто» — светлая или тёмная, как настроено на телефоне.</p>
@@ -74,6 +99,18 @@ export function settingsScreen() {
     mount(el) {
       onActs(el, {
         seg: (t) => { setThemeMode(t.dataset.v); haptic('select'); refresh(); },
+        'bot-save': async () => {
+          const v = el.querySelector('#botUrl').value.trim();
+          if (v && !/^(https:\/\/[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)/i.test(v)) { toast('Адрес должен начинаться с https://', 'error'); return; }
+          setBotUrl(v);
+          if (!v) { toast('Напоминания отключены'); await syncReminders(true); refresh(); return; }
+          if (!inTelegram) { toast('Сохранено. Проверить можно только внутри Telegram'); refresh(); return; }
+          const done = busy('Проверяю бота…');
+          try { await testBot(); haptic('success'); toast('Бот работает — проверьте чат с ботом'); }
+          catch (e) { toast('Не получилось: ' + (e.message || e), 'error'); }
+          finally { done(); refresh(); }
+        },
+        'bot-sync': async () => { await syncReminders(true); refresh(); },
         sync: async () => { await S.syncNow(); refresh(); },
         list: (t) => push(listEditor(t.dataset.k)),
         'backup-file': backupFile,

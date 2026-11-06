@@ -8,8 +8,8 @@ import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
 import { uid, hash, norm, debounce, clone } from './util.js';
 
-export const SCHEMA_VERSION = 1;
-export const APP_VERSION = '1.0.0';
+export const SCHEMA_VERSION = 2;
+export const APP_VERSION = '1.1.0';
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -21,6 +21,8 @@ export const COLLECTIONS = [
   'restaurants', // рестораны-источники
   'stations',    // цеха/станции
   'products',    // справочник продуктов (под будущую себестоимость: цены, поставщики)
+  'timers',      // таймеры: { label, endsAt, durationSec, itemId }
+  'settings',    // настройки, общие для устройств: { id: 'botUrl', value }
 ];
 
 export const OWN_SOURCE_ID = 'own'; // «Своя разработка» — всегда есть
@@ -55,9 +57,18 @@ export function emptyDoc() {
 }
 
 // ---- Миграции ----------------------------------------------------------------
-// Ключ — версия, ИЗ которой мигрируем. Пример на будущее:
-//   1: (doc) => { for (const r of Object.values(doc.c.recipes)) r.costPerPortion ??= null; return doc; }
+// Ключ — версия, ИЗ которой мигрируем.
 const MIGRATIONS = {
+  // 1 → 2: у заготовок появились время «Сделать к» по дням и напоминания; таймеры и настройки
+  1: (doc) => {
+    for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
+    for (const r of Object.values(doc.c.prepItems)) {
+      if (r.deleted) continue;
+      if (!Array.isArray(r.times)) r.times = Array(7).fill('');
+      if (!Array.isArray(r.reminders)) r.reminders = [];
+    }
+    return doc;
+  },
   0: (doc) => {
     // «нулевая» версия — документ без поля schema: просто приводим к структуре v1
     const out = emptyDoc();
@@ -123,6 +134,7 @@ function compact(doc) {
       const r = col[id];
       if (r.deleted && now - (r.updatedAt || 0) > TOMBSTONE_TTL) delete col[id];
       else if (k === 'prepLog' && now - (r.updatedAt || 0) > PREPLOG_TTL) delete col[id];
+      else if (k === 'timers' && r.endsAt && now - r.endsAt > 2 * 864e5) delete col[id];
     }
   }
 }

@@ -1,34 +1,30 @@
-// Раздел «Заготовки»: матрица норм по дням недели, режим «Сегодня/Завтра» и «Неделя»
+// Раздел «Заготовки»: нормы и время «Сделать к» по дням недели, напоминания в Telegram, таймеры.
+// Режимы «Сегодня/Завтра» и «Неделя».
 
-import { html, uid, clone, num, fmtNum, WEEKDAYS, dateISO, addDays, weekdayIdx, fmtDayLong } from '../util.js';
+import { html, uid, clone, num, fmtNum, WEEKDAYS, dateISO, addDays, weekdayIdx, fmtDayLong, fmtDuration, fmtCountdown, fmtClock } from '../util.js';
 import * as S from '../store.js';
-import { push, back, refresh, toast, confirmDialog, onActs, showText } from '../ui.js';
-import { haptic, shareText } from '../tg.js';
+import { push, back, refresh, toast, confirmDialog, onActs, showText, sheet } from '../ui.js';
+import { haptic, shareText, inTelegram } from '../tg.js';
 import { refSelect, bindRefSelects, fab, emptyState, segmented, icon, inNum } from './common.js';
 import { recipeDetail } from './ttk.js';
+import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped } from '../prepcore.js';
+import { botUrl } from '../reminders.js';
 
 const PREP_UNITS = ['кг', 'г', 'л', 'мл', 'шт', 'порц', 'гастро', 'конт', 'бут'];
 const st = { mode: 'today' };
+let tick = null;          // обновление обратного отсчёта таймеров
+const firedTimers = new Set();
 
 const dayDate = () => (st.mode === 'tomorrow' ? addDays(new Date(), 1) : new Date());
-const logId = (date, itemId) => `${date}|${itemId}`;
-const getLog = (date, itemId) => S.get('prepLog', logId(date, itemId)) || { left: null, done: false };
-const normOf = (it, wd) => num(it.norms?.[wd]) ?? null;
-const toMake = (it, wd, log) => {
-  const n = normOf(it, wd);
-  if (n == null) return null;
-  return Math.max(0, Math.round((n - (log.left || 0)) * 1000) / 1000);
-};
 
-function grouped(items) {
-  const stations = S.sortedList('stations');
-  const groups = stations.map((s) => ({ id: s.id, name: s.name, items: items.filter((i) => i.stationId === s.id) }));
-  const known = new Set(stations.map((s) => s.id));
-  const rest = items.filter((i) => !known.has(i.stationId));
-  if (rest.length) groups.push({ id: '', name: 'Без цеха', items: rest });
-  return groups.filter((g) => g.items.length);
+// Сортировка внутри цеха: сначала по времени «Сделать к», без времени — в конце
+function byTime(items, wd, iso) {
+  return [...items].sort((a, b) => {
+    const ta = timeOf(a, wd, getLog(iso, a.id)) || '99:99';
+    const tb = timeOf(b, wd, getLog(iso, b.id)) || '99:99';
+    return ta.localeCompare(tb) || (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'ru');
+  });
 }
-const sortItems = (arr) => arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'ru'));
 
 export function prepText(date) {
   const wd = weekdayIdx(date);
@@ -38,12 +34,13 @@ export function prepText(date) {
   const done = [];
   for (const g of grouped(items)) {
     const lines = [];
-    for (const it of g.items) {
+    for (const it of byTime(g.items, wd, iso)) {
       const log = getLog(iso, it.id);
       const m = toMake(it, wd, log);
       if (log.done) { done.push(it.name); continue; }
       if (!m) continue;
-      let s = `• ${it.name} — ${fmtNum(m)} ${it.unit || ''}`.trim();
+      const time = timeOf(it, wd, log);
+      let s = `• ${time ? `к ${time} — ` : ''}${it.name} — ${fmtNum(m)} ${it.unit || ''}`.trim();
       if (log.left) s += ` (норма ${fmtNum(normOf(it, wd))}, остаток ${fmtNum(log.left)})`;
       lines.push(s);
     }
@@ -54,10 +51,73 @@ export function prepText(date) {
   return L.join('\n');
 }
 
+// ---- Выбор длительности: дни / часы / минуты / секунды -------------------------------
+const QUICK = [[30, '30 сек'], [300, '5 мин'], [900, '15 мин'], [1800, '30 мин'], [3600, '1 ч'], [7200, '2 ч'], [10800, '3 ч'], [86400, '1 день']];
+export function durationSheet(title, { initial = 0, okLabel = 'Готово', withLabel = false, label = '', allowZero = false } = {}) {
+  const split = (s) => [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  const [d, h, m, sec] = split(initial);
+  return sheet({
+    title,
+    body: html`
+      ${withLabel ? html`<label class="fld"><span>Название</span><input class="inp" id="durLabel" value="${label}" placeholder="Например, бульон"></label>` : ''}
+      <div class="chips wrap">${QUICK.map(([s, l]) => html`<button class="chip" data-q="${s}">${l}</button>`)}</div>
+      <div class="dur">
+        <label><input class="inp" id="durD" inputmode="numeric" value="${d || ''}" placeholder="0"><small>дней</small></label>
+        <label><input class="inp" id="durH" inputmode="numeric" value="${h || ''}" placeholder="0"><small>часов</small></label>
+        <label><input class="inp" id="durM" inputmode="numeric" value="${m || ''}" placeholder="0"><small>минут</small></label>
+        <label><input class="inp" id="durS" inputmode="numeric" value="${sec || ''}" placeholder="0"><small>секунд</small></label>
+      </div>`,
+    buttons: [
+      { label: 'Отмена', kind: 'ghost' },
+      {
+        label: okLabel, kind: 'primary', value: (w) => {
+          const v = (id) => Math.max(0, Math.floor(num(w.querySelector(id).value) || 0));
+          const total = v('#durD') * 86400 + v('#durH') * 3600 + v('#durM') * 60 + v('#durS');
+          if (!total && !allowZero) return null;
+          return { sec: total, label: withLabel ? w.querySelector('#durLabel').value.trim() : '' };
+        },
+      },
+    ],
+    onMount: (el) => {
+      el.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
+        const [qd, qh, qm, qs] = split(+b.dataset.q);
+        el.querySelector('#durD').value = qd || ''; el.querySelector('#durH').value = qh || '';
+        el.querySelector('#durM').value = qm || ''; el.querySelector('#durS').value = qs || '';
+        haptic('select');
+      }));
+    },
+  });
+}
+
+async function startTimer(defaultLabel = '', itemId = '') {
+  const r = await durationSheet('Новый таймер', { withLabel: true, label: defaultLabel, okLabel: 'Запустить' });
+  if (!r || !r.sec) return;
+  const now = Date.now();
+  S.put('timers', { id: uid(), label: r.label || defaultLabel || 'Таймер', durationSec: r.sec, endsAt: now + r.sec * 1000, itemId });
+  haptic('success');
+  toast(botUrl() && inTelegram ? `Таймер на ${fmtDuration(r.sec)} — бот напишет в Telegram` : `Таймер на ${fmtDuration(r.sec)} запущен`);
+  refresh();
+}
+
+function timersCard() {
+  const now = Date.now();
+  const list = S.list('timers').filter((t) => t.endsAt > now - 12 * 3600e3).sort((a, b) => a.endsAt - b.endsAt);
+  if (!list.length) return '';
+  return html`<div class="card timers">
+    <div class="card-title">Таймеры</div>
+    ${list.map((t) => html`<div class="trow ${t.endsAt <= now ? 'over' : ''}">
+      <div class="t-main"><div class="t-label">${t.label}</div><div class="t-sub">${fmtDuration(t.durationSec)} · до ${fmtClock(t.endsAt)}</div></div>
+      <div class="t-count" data-end="${t.endsAt}">${t.endsAt <= now ? 'Готово!' : fmtCountdown(t.endsAt - now)}</div>
+      <button class="icon-btn" data-act="timer-del" data-id="${t.id}" aria-label="${t.endsAt <= now ? 'Убрать' : 'Отменить'}">${icon('x')}</button>
+    </div>`)}
+  </div>`;
+}
+
 function dayView() {
   const date = dayDate();
   const iso = dateISO(date);
   const wd = weekdayIdx(date);
+  const now = Date.now();
   const all = sortItems(S.list('prepItems'));
   const items = all.filter((i) => normOf(i, wd) > 0);
   const skipped = all.length - items.length;
@@ -66,9 +126,14 @@ function dayView() {
   const row = (it) => {
     const log = getLog(iso, it.id);
     const m = toMake(it, wd, log);
-    return html`<div class="prow ${log.done ? 'done' : ''}" data-id="${it.id}">
+    const time = timeOf(it, wd, log);
+    const dl = deadlineOf(date, time);
+    const late = !log.done && dl && dl < now;
+    const rem = (it.reminders || []).length;
+    return html`<div class="prow ${log.done ? 'done' : ''} ${late ? 'late' : ''}" data-id="${it.id}">
       <div class="pr-line">
         <button class="pr-name" data-act="edit" data-id="${it.id}">${it.name}</button>
+        <button class="icon-btn pr-timer" data-act="timer" data-id="${it.id}" aria-label="Таймер">${icon('timer')}</button>
         <button class="pr-check ${log.done ? 'on' : ''}" data-act="done" data-id="${it.id}" aria-label="Сделано">${icon('check')}</button>
       </div>
       <div class="pr-line pr-nums">
@@ -76,16 +141,23 @@ function dayView() {
         <label class="pr-left">остаток <input class="inp sm" data-left="${it.id}" inputmode="decimal" value="${inNum(log.left)}" placeholder="0"></label>
         <span class="pr-make">сделать <b data-make="${it.id}">${fmtNum(m)}</b> ${it.unit}</span>
       </div>
-      ${it.shelfLife || it.recipeId ? html`<div class="pr-sub">${it.shelfLife ? `хранение: ${it.shelfLife}` : ''}${it.recipeId && S.get('recipes', it.recipeId) ? html` <button class="linkish" data-act="recipe" data-id="${it.recipeId}">ТТК ›</button>` : ''}</div>` : ''}
+      <div class="pr-sub">
+        <button class="pr-time ${time ? '' : 'empty'} ${late ? 'late' : ''} ${log.time ? 'custom' : ''}" data-act="time" data-id="${it.id}">${icon('clock')} ${time ? `к ${time}` : 'время'}${late ? ' · просрочено' : ''}</button>
+        ${rem ? html`<span class="pr-rem">${icon('bell')} ${it.reminders.map((s) => (s ? `за ${fmtDuration(s)}` : 'в срок')).join(', ')}</span>` : ''}
+        ${it.shelfLife ? html`<span>хранение: ${it.shelfLife}</span>` : ''}
+        ${it.recipeId && S.get('recipes', it.recipeId) ? html`<button class="linkish" data-act="recipe" data-id="${it.recipeId}">ТТК ›</button>` : ''}
+      </div>
     </div>`;
   };
   return html`
     <div class="card day-card">
-      <svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" class="ring-bg"/><circle cx="22" cy="22" r="18" class="ring-fg" style="stroke-dasharray:${(113.1 * pct / 100).toFixed(1)} 113.1"/></svg>
+      <svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" class="ring-bg"/>${pct ? html`<circle cx="22" cy="22" r="18" class="ring-fg" style="stroke-dasharray:${(113.1 * pct / 100).toFixed(1)} 113.1"/>` : ''}</svg>
       <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">Готово ${doneN} из ${items.length}${pct === 100 && items.length ? ' 🎉' : ''}</span></div>
       <div class="ring-pct">${pct}%</div>
     </div>
-    ${items.length ? grouped(items).map((g) => html`<div class="group-title">${g.name}</div><div class="card plist">${g.items.map(row)}</div>`)
+    <button class="btn wide mb" data-act="timer-new">${icon('timer')} Таймер</button>
+    ${timersCard()}
+    ${items.length ? grouped(items).map((g) => html`<div class="group-title">${g.name}</div><div class="card plist">${byTime(g.items, wd, iso).map(row)}</div>`)
       : html`<div class="empty small">На этот день норм нет</div>`}
     ${skipped ? html`<div class="muted small pad-x">Без нормы на этот день: ${skipped}</div>` : ''}
     <div class="row gap mt">
@@ -98,14 +170,14 @@ function weekView() {
   const all = sortItems(S.list('prepItems'));
   const today = weekdayIdx(new Date());
   return html`
-    <p class="hint pad-x">Нормы по дням недели. Меняйте прямо в таблице, нажмите на название, чтобы изменить позицию.</p>
+    <p class="hint pad-x">Нормы по дням недели. Меняйте прямо в таблице. Время «Сделать к» и напоминания — в карточке позиции (нажмите на название).</p>
     <div class="wtable-wrap"><table class="wtable">
       <thead><tr><th class="wname">Позиция</th>${WEEKDAYS.map((d, i) => html`<th class="${i === today ? 'today' : ''}">${d}</th>`)}</tr></thead>
       <tbody>${grouped(all).map((g) => html`
         <tr class="wgroup"><td colspan="8">${g.name}</td></tr>
         ${g.items.map((it) => html`<tr>
           <td class="wname"><button class="linkish" data-act="edit" data-id="${it.id}">${it.name}</button><small>${it.unit}</small></td>
-          ${WEEKDAYS.map((_, i) => html`<td class="${i === today ? 'today' : ''}"><input class="winp" data-norm="${it.id}" data-wd="${i}" inputmode="decimal" value="${inNum(it.norms?.[i])}"></td>`)}
+          ${WEEKDAYS.map((_, i) => html`<td class="${i === today ? 'today' : ''}"><input class="winp" data-norm="${it.id}" data-wd="${i}" inputmode="decimal" value="${inNum(it.norms?.[i])}">${it.times?.[i] ? html`<small class="wtime">${it.times[i]}</small>` : ''}</td>`)}
         </tr>`)}`)}
       </tbody>
     </table></div>`;
@@ -119,8 +191,7 @@ export function prepScreen() {
     if (!pending) return;
     const { id, iso, v } = pending;
     pending = null;
-    const prev = getLog(iso, id);
-    S.put('prepLog', { id: logId(iso, id), date: iso, itemId: id, left: v, done: !!prev.done });
+    putLog(iso, id, { left: v });
   };
   const saveLeft = (id, iso, v) => {
     if (pending && pending.id !== id) flushLeft();
@@ -132,26 +203,42 @@ export function prepScreen() {
     tab: 'prep',
     title: 'Заготовки',
     subtitle: () => fmtDayLong(new Date()),
-    onLeave: flushLeft,
+    onLeave: () => { flushLeft(); clearInterval(tick); },
     render() {
       const any = S.list('prepItems').length;
       return html`
         <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }])}</div>
-        ${!any ? emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу и норму на каждый день недели.', html`<button class="btn primary" data-act="add">Добавить позицию</button>`, '🔪')
+        ${!any ? html`${timersCard()}${emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу, норму и время на каждый день недели.', html`<div class="stack"><button class="btn primary" data-act="add">Добавить позицию</button><button class="btn" data-act="timer-new">${icon('timer')} Таймер</button></div>`, '🔪')}`
           : st.mode === 'week' ? weekView() : dayView()}
         ${fab()}`;
     },
     mount(el) {
+      // Живой обратный отсчёт таймеров
+      clearInterval(tick);
+      tick = setInterval(() => {
+        const now = Date.now();
+        el.querySelectorAll('[data-end]').forEach((c) => {
+          const end = +c.dataset.end;
+          if (end > now) { c.textContent = fmtCountdown(end - now); return; }
+          if (c.textContent !== 'Готово!') {
+            c.textContent = 'Готово!';
+            c.closest('.trow')?.classList.add('over');
+            if (!firedTimers.has(end)) {
+              firedTimers.add(end);
+              haptic('warning');
+              toast(`⏱ ${c.closest('.trow')?.querySelector('.t-label')?.textContent || 'Таймер'}: время вышло!`);
+            }
+          }
+        });
+      }, 1000);
       el.addEventListener('input', (e) => {
         const t = e.target;
         if (t.dataset.left) {
           const date = dayDate();
-          const iso = dateISO(date);
           const it = S.get('prepItems', t.dataset.left);
           const v = num(t.value);
-          const m = toMake(it, weekdayIdx(date), { left: v });
-          el.querySelector(`[data-make="${it.id}"]`).textContent = fmtNum(m);
-          saveLeft(it.id, iso, v);
+          el.querySelector(`[data-make="${it.id}"]`).textContent = fmtNum(toMake(it, weekdayIdx(date), { left: v }));
+          saveLeft(it.id, dateISO(date), v);
         }
       });
       el.addEventListener('change', (e) => {
@@ -175,8 +262,36 @@ export function prepScreen() {
           flushLeft();
           const prev = getLog(iso, id);
           const leftInput = el.querySelector(`[data-left="${id}"]`);
-          S.put('prepLog', { id: logId(iso, id), date: iso, itemId: id, left: leftInput ? num(leftInput.value) : prev.left, done: !prev.done });
+          putLog(iso, id, { left: leftInput ? num(leftInput.value) : prev.left, done: !prev.done });
           haptic(prev.done ? 'light' : 'success');
+          refresh();
+        },
+        time: async (t) => {
+          const date = dayDate();
+          const iso = dateISO(date);
+          const it = S.get('prepItems', t.dataset.id);
+          const log = getLog(iso, it.id);
+          const usual = it.times?.[weekdayIdx(date)] || '';
+          const r = await sheet({
+            title: `${it.name}: сделать к — ${fmtDayLong(date)}`,
+            body: html`<input class="inp time-big" type="time" id="tval" value="${timeOf(it, weekdayIdx(date), log)}">
+              <p class="hint">${usual ? `Обычно в этот день — к ${usual}.` : 'Обычного времени на этот день нет.'} Изменение действует только на ${st.mode === 'tomorrow' ? 'завтра' : 'сегодня'}; постоянное время — в карточке позиции.</p>`,
+            buttons: [
+              ...(log.time ? [{ label: 'Как обычно', kind: 'ghost', value: { reset: true } }] : [{ label: 'Отмена', kind: 'ghost' }]),
+              { label: 'Сохранить', kind: 'primary', value: (w) => ({ time: w.querySelector('#tval').value }) },
+            ],
+          });
+          if (!r) return;
+          flushLeft();
+          putLog(iso, it.id, { time: r.reset ? '' : (r.time === usual ? '' : r.time) });
+          refresh();
+        },
+        timer: (t) => startTimer(S.get('prepItems', t.dataset.id)?.name || '', t.dataset.id),
+        'timer-new': () => startTimer(''),
+        'timer-del': async (t) => {
+          const tm = S.get('timers', t.dataset.id);
+          if (tm && tm.endsAt > Date.now() && !(await confirmDialog(`Отменить таймер «${tm.label}»?`, 'Отменить', true))) return;
+          S.remove('timers', t.dataset.id);
           refresh();
         },
         share: async () => {
@@ -186,7 +301,7 @@ export function prepScreen() {
         },
         reset: async () => {
           const iso = dateISO(dayDate());
-          if (!(await confirmDialog('Сбросить отметки и остатки за этот день?', 'Сбросить', true))) return;
+          if (!(await confirmDialog('Сбросить отметки, остатки и время на этот день?', 'Сбросить', true))) return;
           S.batch(() => {
             for (const l of S.list('prepLog')) if (l.date === iso) S.remove('prepLog', l.id, { silent: true });
           });
@@ -198,13 +313,19 @@ export function prepScreen() {
   };
 }
 
+// ---- Карточка позиции ---------------------------------------------------------------------
 function prepForm({ item }) {
   const isNew = !item;
-  const d = item ? clone(item) : { name: '', stationId: '', unit: 'кг', shelfLife: '', recipeId: '', norms: Array(7).fill(null) };
+  const d = item ? clone(item) : { name: '', stationId: '', unit: 'кг', shelfLife: '', recipeId: '', norms: Array(7).fill(null), times: Array(7).fill(''), reminders: [3600] };
   d.norms = d.norms || Array(7).fill(null);
+  d.times = Array.isArray(d.times) ? d.times : Array(7).fill('');
+  d.reminders = Array.isArray(d.reminders) ? d.reminders : [];
   const initial = JSON.stringify(d);
   let saved = false;
   const recipes = S.list('recipes').sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const remChips = () => html`${d.reminders.length
+    ? [...d.reminders].sort((a, b) => b - a).map((s) => html`<span class="rchip">${icon('bell')} ${s ? `за ${fmtDuration(s)}` : 'в срок'}<button data-act="rem-del" data-s="${s}" aria-label="Убрать">${icon('x')}</button></span>`)
+    : html`<span class="muted small">Напоминаний нет</span>`}`;
   return {
     tab: 'prep',
     form: true,
@@ -224,12 +345,28 @@ function prepForm({ item }) {
         </select></label>
       </div>
       <div class="card">
-        <div class="card-title">Норма по дням (${d.unit})</div>
-        <div class="norms">${WEEKDAYS.map((w, i) => html`<label><small>${w}</small><input class="inp" data-wd="${i}" inputmode="decimal" value="${inNum(d.norms[i])}"></label>`)}</div>
-        <div class="row gap mt">
-          <input class="inp grow" id="allNorm" inputmode="decimal" placeholder="Одна норма на все дни">
-          <button class="btn" data-act="all">На все дни</button>
+        <div class="card-title">Норма и время по дням</div>
+        <div class="dgrid">
+          <div class="dg-h"></div><div class="dg-h">Норма, <span class="unit-now">${d.unit}</span></div><div class="dg-h">Сделать к</div><div class="dg-h"></div>
+          ${WEEKDAYS.map((w, i) => html`
+            <div class="dg-day">${w}</div>
+            <input class="inp" data-wd="${i}" inputmode="decimal" value="${inNum(d.norms[i])}" placeholder="—">
+            <input class="inp" type="time" data-time="${i}" value="${d.times[i] || ''}">
+            <button class="icon-btn" data-act="time-clear" data-i="${i}" aria-label="Убрать время" ${d.times[i] ? '' : 'disabled'}>${icon('x')}</button>`)}
+          <div class="dg-day all">Все</div>
+          <input class="inp" id="allNorm" inputmode="decimal" placeholder="норма">
+          <input class="inp" type="time" id="allTime">
+          <div></div>
         </div>
+        <button class="btn wide mt" data-act="all">Заполнить все дни</button>
+        <p class="hint">Пустая норма — в этот день позиция не нужна. Время можно оставить пустым.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Напоминания в Telegram</div>
+        <div class="rchips" id="rems">${remChips()}</div>
+        <button class="btn wide mt" data-act="rem-add">${icon('bell')} Добавить напоминание</button>
+        <p class="hint">Бот напишет в чат за выбранное время до «Сделать к». Если позиция уже отмечена сделанной — не напишет.
+          ${!botUrl() ? html`<br><b>Бот ещё не подключён</b> — Настройки → Напоминания в Telegram.` : ''}</p>
       </div>
       ${!isNew ? html`<div class="card"><button class="btn ghost danger wide" data-act="del">${icon('trash')} Удалить позицию</button></div>` : ''}
       <div class="bottom-bar"><button class="btn primary wide" data-act="save">Сохранить</button></div>`,
@@ -238,18 +375,50 @@ function prepForm({ item }) {
       el.addEventListener('input', (e) => {
         const t = e.target;
         if (t.dataset.wd != null) d.norms[+t.dataset.wd] = num(t.value);
-        else if (t.dataset.f && t.dataset.f !== 'stationId') d[t.dataset.f] = t.value;
+        else if (t.dataset.time != null) {
+          d.times[+t.dataset.time] = t.value || '';
+          const b = el.querySelector(`[data-act="time-clear"][data-i="${t.dataset.time}"]`);
+          if (b) b.disabled = !t.value;
+        } else if (t.dataset.f && t.dataset.f !== 'stationId') {
+          d[t.dataset.f] = t.value;
+          if (t.dataset.f === 'unit') el.querySelector('.unit-now').textContent = t.value;
+        }
       });
+      const redrawRems = () => { el.querySelector('#rems').innerHTML = String(remChips()); };
       onActs(el, {
         all: () => {
           const v = num(el.querySelector('#allNorm').value);
-          if (v == null) { toast('Введите число'); return; }
-          d.norms = Array(7).fill(v);
-          el.querySelectorAll('[data-wd]').forEach((i) => { i.value = inNum(v); });
+          const tm = el.querySelector('#allTime').value;
+          if (v == null && !tm) { toast('Введите норму и/или время'); return; }
+          if (v != null) { d.norms = Array(7).fill(v); el.querySelectorAll('[data-wd]').forEach((i) => { i.value = inNum(v); }); }
+          if (tm) {
+            d.times = Array(7).fill(tm);
+            el.querySelectorAll('[data-time]').forEach((i) => { i.value = tm; });
+            el.querySelectorAll('[data-act="time-clear"]').forEach((b) => { b.disabled = false; });
+          }
           haptic('select');
+        },
+        'time-clear': (t) => {
+          const i = +t.dataset.i;
+          d.times[i] = '';
+          el.querySelector(`[data-time="${i}"]`).value = '';
+          t.disabled = true;
+        },
+        'rem-add': async () => {
+          const r = await durationSheet('Напомнить заранее — за сколько до «Сделать к»?', { okLabel: 'Добавить', allowZero: true });
+          if (!r) return;
+          if (d.reminders.includes(r.sec)) { toast('Такое напоминание уже есть'); return; }
+          d.reminders.push(r.sec);
+          redrawRems();
+          haptic('select');
+        },
+        'rem-del': (t) => {
+          d.reminders = d.reminders.filter((s) => s !== +t.dataset.s);
+          redrawRems();
         },
         save: () => {
           if (!d.name.trim()) { toast('Введите название', 'error'); return; }
+          if (d.reminders.length && !d.times.some(Boolean)) toast('Напоминания сработают, когда будет задано время «Сделать к»');
           saved = true;
           S.batch(() => {
             S.put('prepItems', { ...d, id: d.id || uid(), name: d.name.trim(), stationId: S.resolveRef('stations', d.stationId) }, { silent: true });

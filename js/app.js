@@ -11,6 +11,7 @@ import { ideasList } from './views/ideas.js';
 import { equipmentList } from './views/equipment.js';
 import { prepScreen } from './views/prep.js';
 import { settingsScreen } from './views/settings.js';
+import { initReminders, onRemState } from './reminders.js';
 
 function syncDot() {
   const el = document.getElementById('syncDot');
@@ -45,15 +46,18 @@ async function main() {
   S.onChange((src) => {
     if (['remote', 'import', 'wipe'].includes(src) && !top()?.form) refresh();
   });
+  const typing = () => document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
   S.onSync(() => {
     syncDot();
-    if (top()?.tab === 'settings' && top()?.title === 'Настройки') {
+    if (top()?.tab === 'settings' && top()?.title === 'Настройки' && !typing()) {
       const card = document.querySelector('.sync-card');
       if (card) refresh();
     }
   });
   syncDot();
   S.initSync();
+  initReminders();
+  onRemState(() => { if (top()?.tab === 'settings' && top()?.title === 'Настройки' && document.querySelector('.rem-card') && !typing()) refresh(); });
   requestPersist();
   setTimeout(photoGC, 8000);
   document.body.classList.add('ready');

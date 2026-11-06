@@ -1,0 +1,14 @@
+# Бот-напоминальщик «Книги кухни» (Cloudflare Workers, бесплатный тариф).
+# Ключ бота задаётся секретом BOT_TOKEN в настройках Cloudflare — в репозиторий он не попадает.
+name = "kniga-kuhni-bot"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "SCHEDULER"
+class_name = "Scheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Scheduler"]

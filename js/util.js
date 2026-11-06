@@ -140,6 +140,30 @@ export async function dataURLToBlob(url) {
   return r.blob();
 }
 
+// Длительности: секунды ↔ «1 ч 30 мин»
+export function fmtDuration(sec) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec === 0) return '0 сек';
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const parts = [];
+  if (d) parts.push(`${d} ${plural(d, 'день', 'дня', 'дней')}`);
+  if (h) parts.push(`${h} ч`);
+  if (m) parts.push(`${m} мин`);
+  if (s) parts.push(`${s} сек`);
+  return parts.join(' ');
+}
+// Обратный отсчёт: 1:05:09 или 2 дн 03:10:00
+export function fmtCountdown(ms) {
+  const neg = ms < 0;
+  let sec = Math.floor(Math.abs(ms) / 1000);
+  const d = Math.floor(sec / 86400); sec %= 86400;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p = (x) => String(x).padStart(2, '0');
+  const t = h || d ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+  return (neg ? '−' : '') + (d ? `${d} дн ${t}` : t);
+}
+export const fmtClock = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
 // localStorage может быть недоступен в некоторых WebView — не падаем
 export function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 export function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* нет */ } }
