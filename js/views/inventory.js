@@ -6,6 +6,8 @@ import * as S from '../store.js';
 import { push, back, replace, refresh, toast, confirmDialog, onActs, actionSheet, sheet, showText } from '../ui.js';
 import { haptic, shareText, inTelegram } from '../tg.js';
 import { icon, fab, emptyState, segmented, chips, refSelect, bindRefSelects, busy, inNum, saveFile } from './common.js';
+import { equipmentSection, equipmentActs, equipmentNeedText } from './equipment.js';
+import { botReady, sendFile } from '../reminders.js';
 
 const UNITS_INV = ['кг', 'г', 'л', 'мл', 'шт', 'уп', 'пачка', 'банка', 'бут', 'порц'];
 const st = { view: 'items', q: '', loc: '' };
@@ -115,6 +117,18 @@ async function exportExcel(s) {
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     done();
     const name = `inventarizaciya-${s.date}.xlsx`;
+    if (botReady()) {
+      const v = await actionSheet('Excel: ' + name, [
+        { label: 'Прислать в чат с ботом', value: 'chat', hint: 'файл придёт сообщением — можно сохранить или переслать' },
+        { label: 'Сохранить на телефон', value: 'save' },
+      ]);
+      if (!v) return;
+      if (v === 'chat') {
+        const d2 = busy('Отправляю в чат…');
+        try { await sendFile(blob, name, `Инвентаризация ${dayLabel(s.date)}`); toast('Файл отправлен в чат с ботом'); } catch (e) { toast(e.message || String(e), 'error'); } finally { d2(); }
+        return;
+      }
+    }
     const how = await saveFile(blob, name);
     if (how === 'download' && inTelegram) {
       await sheet({
@@ -156,8 +170,8 @@ export function stockScreen() {
     },
     render() {
       const items = allItems();
-      if (!items.length) {
-        return html`${emptyState('Склад пока пуст', 'Добавьте позиции для инвентаризации — из справочника продуктов (всё, что вы вводили в ТТК), из заготовок или вручную.', html`
+      if (!items.length && st.view !== 'order') {
+        return html`${segBar()}${emptyState('Склад пока пуст', 'Добавьте позиции для инвентаризации — из справочника продуктов (всё, что вы вводили в ТТК), из заготовок или вручную.', html`
           <div class="stack">
             <button class="btn primary" data-act="add-products">${icon('box')} Из справочника продуктов</button>
             <button class="btn" data-act="add-prep">Из заготовок</button>
@@ -165,14 +179,25 @@ export function stockScreen() {
           </div>`, '📦')}${fab()}`;
       }
       return html`
-        <div class="toolbar sticky">${segmented('view', st.view, [{ id: 'items', label: 'Позиции' }, { id: 'history', label: 'Инвентаризации' }])}</div>
-        ${st.view === 'history' ? historyView() : itemsView(items)}
-        ${fab()}`;
+        ${segBar()}
+        ${st.view === 'history' ? historyView() : st.view === 'order' ? orderView() : itemsView(items)}
+        ${st.view === 'order' ? fab('eq-add', 'Добавить оборудование') : fab()}`;
     },
     mount(el) {
       const q = el.querySelector('#iq');
       if (q) q.addEventListener('input', () => { st.q = q.value; renderItems(el); });
       onActs(el, {
+        ...equipmentActs(),
+        'share-all': () => {
+          const last = doneSessions()[0];
+          const ord = last ? orderList(last) : [];
+          const parts = [];
+          if (ord.length) parts.push(orderText(ord, last.date));
+          const eq = equipmentNeedText();
+          if (eq) parts.push(eq);
+          if (!parts.length) { toast('Заказывать нечего'); return; }
+          shareTextOrShow(parts.join('\n\n'), 'К заказу');
+        },
         seg: (t) => { st.view = t.dataset.v; refresh(); },
         chip: (t) => { st.loc = t.dataset.v; refresh(); },
         start: startCount,
@@ -190,6 +215,23 @@ export function stockScreen() {
       renderItems(el);
     },
   };
+}
+
+const segBar = () => html`<div class="toolbar sticky">${segmented('view', st.view, [{ id: 'items', label: 'Позиции' }, { id: 'history', label: 'Пересчёты' }, { id: 'order', label: 'Дозаказ' }])}</div>`;
+
+function orderView() {
+  const last = doneSessions()[0];
+  const ord = last ? orderList(last) : [];
+  const eqN = S.list('equipment').filter((e) => e.status === 'need').length;
+  return html`
+    ${ord.length || eqN ? html`<button class="btn primary wide mb" data-act="share-all">${icon('share')} Поделиться всем списком к заказу</button>` : ''}
+    <div class="group-title">Продукты${last ? ` · по инвентаризации ${dayLabel(last.date)}` : ''}</div>
+    ${ord.length ? html`<div class="card order-card">
+        ${ord.map((o) => html`<div class="ord-row"><span>${o.it.name}<small>осталось ${fmtNum(o.qty)}, мин. ${fmtNum(o.min)}${o.it.supplier ? ` · ${o.it.supplier}` : ''}</small></span><b>${fmtNum(o.need)} ${o.it.unit}</b></div>`)}
+        <button class="btn wide mt" data-act="share-order">${icon('share')} Поделиться продуктами</button>
+      </div>`
+      : html`<div class="card"><p class="hint mt0">${last ? 'По последней инвентаризации всего хватает 👍' : 'Список появится после инвентаризации — для позиций с минимальным остатком.'}</p></div>`}
+    ${equipmentSection()}`;
 }
 
 function itemsView(items) {

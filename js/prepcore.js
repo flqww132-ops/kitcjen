@@ -1,5 +1,5 @@
 // Общая логика заготовок: нормы, время «Сделать к», остатки
-import { num, dateISO, weekdayIdx } from './util.js';
+import { num, dateISO, weekdayIdx, fmtNum, fmtDayLong } from './util.js';
 import * as S from './store.js';
 
 export const logId = (date, itemId) => `${date}|${itemId}`;
@@ -41,4 +41,41 @@ export function grouped(items) {
   if (rest.length) groups.push({ id: '', name: 'Без цеха', items: rest });
   return groups.filter((g) => g.items.length);
 }
+// Сортировка внутри цеха: сначала по времени «Сделать к», без времени — в конце
+export function byTime(items, wd, iso) {
+  return [...items].sort((a, b) => {
+    const ta = timeOf(a, wd, getLog(iso, a.id)) || '99:99';
+    const tb = timeOf(b, wd, getLog(iso, b.id)) || '99:99';
+    return ta.localeCompare(tb) || (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'ru');
+  });
+}
+
+export function prepText(date) {
+  const wd = weekdayIdx(date);
+  const iso = dateISO(date);
+  const items = sortItems(S.list('prepItems')).filter((i) => neededOn(i, wd));
+  const L = [`Заготовки на ${fmtDayLong(date)}:`];
+  const done = [], closed = [];
+  for (const g of grouped(items)) {
+    const lines = [];
+    for (const it of byTime(g.items, wd, iso)) {
+      const log = getLog(iso, it.id);
+      const stt = statusOf(log);
+      if (stt === 'done') { done.push(it.name); continue; }
+      if (stt === 'closed') { closed.push(it.name); continue; }
+      const m = toMake(it, wd, log);
+      if (m === 0) continue;
+      const time = timeOf(it, wd, log);
+      let s = `• ${time ? `к ${time} — ` : ''}${it.name}${m != null ? ` — ${fmtNum(m)} ${it.unit || ''}` : ''}`.trim();
+      if (log.left) s += ` (норма ${fmtNum(normOf(it, wd))}, остаток ${fmtNum(log.left)})`;
+      lines.push(s);
+    }
+    if (lines.length) L.push('', g.name + ':', ...lines);
+  }
+  if (L.length === 1) L.push('', 'Всё сделано или ничего не нужно 👍');
+  if (done.length) L.push('', '✅ Уже готово: ' + done.join(', '));
+  if (closed.length) L.push('', '✖️ Снято: ' + closed.join(', '));
+  return L.join('\n');
+}
+
 export { weekdayIdx };

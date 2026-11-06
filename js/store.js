@@ -9,7 +9,7 @@ import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from 
 import { uid, hash, norm, debounce, clone, num } from './util.js';
 
 export const SCHEMA_VERSION = 4;
-export const APP_VERSION = '1.3.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const APP_VERSION = '1.4.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК

@@ -664,3 +664,19 @@ body:not(.root) .fab { display: none; }
 .collapse-head .chev { color: var(--accent-text); transition: transform .2s; }
 .collapse-head.open .chev { transform: rotate(180deg); }
 .collapse-body { margin-top: 12px; }
+
+/* План в Telegram, PDF */
+.switch-row.in-list { margin: 0; padding: 12px 14px 12px 0; border-bottom: 0.5px solid var(--sep); }
+.switch-row.in-list:last-child { border-bottom: 0; }
+.sw-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.sw-text b { font-weight: 600; }
+.sw-text small { color: var(--hint); font-size: 13px; font-weight: 400; }
+.time-mid { width: 124px; flex: none; text-align: center; font-weight: 700; font-size: 18px; }
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.day { min-height: 38px; border-radius: 12px; background: var(--field); color: var(--hint); font-weight: 700; font-size: 13px; text-align: center; }
+.day.on { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pdf-photos { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.pdf-ph { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pdf-ph input { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; z-index: 2; accent-color: var(--accent); }
+.pdf-ph input:not(:checked) + .ph { opacity: .35; }
+.pdf-ph small { color: var(--hint); font-size: 12px; }

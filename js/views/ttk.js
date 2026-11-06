@@ -6,7 +6,8 @@ import { push, back, replace, refresh, toast, actionSheet, confirmDialog, onActs
 import { shareText, copyText, haptic } from '../tg.js';
 import { addPhoto, deletePhoto, hydratePhotos, photoURL } from '../photos.js';
 import { recipeToText, parseRecipesText, emptyRecipe, CLAUDE_TTK_PROMPT } from '../textfmt.js';
-import { icon, refSelect, bindRefSelects, fab, emptyState, segmented, busy, inNum, catStyle, catTag } from './common.js';
+import { icon, refSelect, bindRefSelects, fab, emptyState, segmented, busy, inNum, catStyle, catTag, saveFile } from './common.js';
+import { botReady, sendFile } from '../reminders.js';
 
 // ---- Расчёты ----------------------------------------------------------------------------------
 export function wastePct(b, n) {
@@ -246,10 +247,12 @@ export function recipeDetail(id) {
         },
         more: async () => {
           const v = await actionSheet(r.name, [
+            { label: 'PDF для печати', value: 'pdf', hint: 'с фото — сохранить или прислать в чат' },
             { label: 'Скопировать текстом', value: 'copy' },
             { label: 'Дублировать', value: 'dup' },
             { label: 'Удалить', value: 'del', danger: true },
           ]);
+          if (v === 'pdf') { pdfFlow(r, factor(r), scaledNote()); return; }
           if (v === 'copy') {
             if (await copyText(text())) toast('Скопировано'); else showText('Текст ТТК', text());
           }
@@ -274,6 +277,44 @@ export function recipeDetail(id) {
       });
     },
   };
+}
+
+// PDF: выбор фото и куда отправить
+async function pdfFlow(r, k, note) {
+  const photos = r.photos || [];
+  const res = await sheet({
+    title: 'PDF: ' + r.name,
+    body: html`
+      ${photos.length ? html`<div class="pg-title">Фото в PDF</div>
+        <div class="pdf-photos">${photos.map((p, i) => html`<label class="pdf-ph"><input type="checkbox" data-i="${i}" checked><span class="ph pthumb"><img data-photo="${p.id}" alt=""><span class="ph-miss">нет на этом устройстве</span></span><small>${p.kind === 'plating' ? 'подача' : 'блюдо'}</small></label>`)}</div>`
+        : html`<p class="hint mt0">У этой ТТК нет фото — добавить их можно в «Изменить».</p>`}
+      ${k !== 1 ? html`<label class="switch-row"><input type="checkbox" id="pdfScale" checked><span class="sw"></span>С пересчётом (${note})</label>` : ''}`,
+    buttons: [
+      { label: 'Сохранить PDF', kind: botReady() ? '' : 'primary', value: (w) => ({ to: 'save', w }) },
+      ...(botReady() ? [{ label: 'В чат', kind: 'primary', value: (w) => ({ to: 'chat', w }) }] : []),
+    ],
+    onMount: (el) => hydratePhotos(el),
+  });
+  if (!res) return;
+  const chosen = [...res.w.querySelectorAll('.pdf-ph input:checked')].map((c) => photos[+c.dataset.i]);
+  const useScale = k !== 1 && res.w.querySelector('#pdfScale')?.checked;
+  const done = busy('Готовлю PDF…');
+  try {
+    const { recipePdf } = await import('../pdf.js');
+    const blob = await recipePdf(r, { photos: chosen, factor: useScale ? k : 1, scaledNote: useScale ? note : '' });
+    const name = `TTK-${(r.name || 'karta').replace(/[^\wа-яё\- ]+/gi, '').trim().replace(/\s+/g, '-').slice(0, 60)}.pdf`;
+    done();
+    if (res.to === 'chat') {
+      const d2 = busy('Отправляю в чат…');
+      try { await sendFile(blob, name, r.name); toast('PDF отправлен в чат с ботом'); } finally { d2(); }
+    } else {
+      const how = await saveFile(blob, name);
+      if (how === 'download') toast('PDF сохранён: ' + name);
+    }
+  } catch (e) {
+    done();
+    toast(e.message || 'Не получилось сделать PDF', 'error');
+  }
 }
 
 async function deleteRecipe(r) {

@@ -5,6 +5,7 @@ import * as S from './store.js';
 import { W, inTelegram } from './tg.js';
 import { addDays, dateISO, weekdayIdx, fmtDayLong, fmtNum, fmtDuration, hash, debounce, lsGet, lsSet, fmtClock } from './util.js';
 import { getLog, timeOf, toMake, deadlineOf, sortItems, neededOn } from './prepcore.js';
+import { planSchedule } from './plan.js';
 
 const HORIZON_DAYS = 14;
 export const remState = { state: 'off', message: '', count: null, next: null, at: 0 };
@@ -55,6 +56,8 @@ export function buildSchedule(now = Date.now()) {
   for (const t of S.list('timers')) {
     if (t.endsAt > now) out.push({ at: t.endsAt, key: `timer|${t.id}`, text: `⏱ Таймер «${t.label || 'Таймер'}»: время вышло! (поставлен на ${fmtDuration(t.durationSec || 0)}, в ${fmtClock(t.createdAt || t.endsAt)})` });
   }
+  for (const fn of extraSchedules) { try { out.push(...fn(now)); } catch (e) { console.error(e); } }
+  out.push(...planSchedule(now));
   return out.sort((a, b) => a.at - b.at).slice(0, 1000);
 }
 
@@ -64,6 +67,31 @@ async function api(path, method, body) {
     headers: { 'Content-Type': 'application/json', 'X-Init-Data': W?.initData || '' },
     body: body ? JSON.stringify(body) : undefined,
   });
+  let j = null;
+  try { j = await r.json(); } catch (e) { /* нет */ }
+  if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `ошибка ${r.status}`);
+  return j;
+}
+
+// Дополнительные источники сообщений (сроки годности, чек-листы) регистрируются здесь
+const extraSchedules = [];
+export const registerSchedule = (fn) => { if (!extraSchedules.includes(fn)) extraSchedules.push(fn); };
+
+export const botReady = () => !!(botUrl() && inTelegram);
+function needBot() {
+  if (!botUrl()) throw new Error('Бот не подключён — Настройки → Напоминания в Telegram');
+  if (!inTelegram) throw new Error('Работает, только когда приложение открыто в Telegram');
+}
+// Отправить текст в чат прямо сейчас
+export async function sendText(text) { needBot(); return api('/api/send', 'POST', { text }); }
+// Отправить файл в чат
+export async function sendFile(blob, filename, caption = '') {
+  needBot();
+  const fd = new FormData();
+  fd.append('file', blob, filename);
+  fd.append('filename', filename);
+  if (caption) fd.append('caption', caption);
+  const r = await fetch(botUrl() + '/api/send-file', { method: 'POST', headers: { 'X-Init-Data': W?.initData || '' }, body: fd });
   let j = null;
   try { j = await r.json(); } catch (e) { /* нет */ }
   if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `ошибка ${r.status}`);

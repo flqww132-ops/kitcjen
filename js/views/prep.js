@@ -7,7 +7,9 @@ import { push, back, refresh, toast, confirmDialog, onActs, showText, sheet } fr
 import { haptic, shareText, inTelegram } from '../tg.js';
 import { refSelect, bindRefSelects, fab, emptyState, segmented, chips, icon, inNum } from './common.js';
 import { recipeDetail } from './ttk.js';
-import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped, neededOn, statusOf } from '../prepcore.js';
+import { planScreen } from './planview.js';
+import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped, neededOn, statusOf, byTime, prepText } from '../prepcore.js';
+export { prepText };
 import { botUrl } from '../reminders.js';
 
 const PREP_UNITS = ['кг', 'г', 'л', 'мл', 'шт', 'порц', 'гастро', 'конт', 'бут'];
@@ -16,43 +18,6 @@ let tick = null;          // обновление обратного отсчё�
 const firedTimers = new Set();
 
 const dayDate = () => (st.mode === 'tomorrow' ? addDays(new Date(), 1) : new Date());
-
-// Сортировка внутри цеха: сначала по времени «Сделать к», без времени — в конце
-function byTime(items, wd, iso) {
-  return [...items].sort((a, b) => {
-    const ta = timeOf(a, wd, getLog(iso, a.id)) || '99:99';
-    const tb = timeOf(b, wd, getLog(iso, b.id)) || '99:99';
-    return ta.localeCompare(tb) || (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'ru');
-  });
-}
-
-export function prepText(date) {
-  const wd = weekdayIdx(date);
-  const iso = dateISO(date);
-  const items = sortItems(S.list('prepItems')).filter((i) => neededOn(i, wd));
-  const L = [`Заготовки на ${fmtDayLong(date)}:`];
-  const done = [], closed = [];
-  for (const g of grouped(items)) {
-    const lines = [];
-    for (const it of byTime(g.items, wd, iso)) {
-      const log = getLog(iso, it.id);
-      const stt = statusOf(log);
-      if (stt === 'done') { done.push(it.name); continue; }
-      if (stt === 'closed') { closed.push(it.name); continue; }
-      const m = toMake(it, wd, log);
-      if (m === 0) continue;
-      const time = timeOf(it, wd, log);
-      let s = `• ${time ? `к ${time} — ` : ''}${it.name}${m != null ? ` — ${fmtNum(m)} ${it.unit || ''}` : ''}`.trim();
-      if (log.left) s += ` (норма ${fmtNum(normOf(it, wd))}, остаток ${fmtNum(log.left)})`;
-      lines.push(s);
-    }
-    if (lines.length) L.push('', g.name + ':', ...lines);
-  }
-  if (L.length === 1) L.push('', 'Всё сделано или ничего не нужно 👍');
-  if (done.length) L.push('', '✅ Уже готово: ' + done.join(', '));
-  if (closed.length) L.push('', '✖️ Снято: ' + closed.join(', '));
-  return L.join('\n');
-}
 
 // ---- Выбор длительности: дни / часы / минуты / секунды -------------------------------
 const QUICK = [[30, '30 сек'], [300, '5 мин'], [900, '15 мин'], [1800, '30 мин'], [3600, '1 ч'], [7200, '2 ч'], [10800, '3 ч'], [86400, '1 день']];
@@ -178,7 +143,10 @@ function dayView() {
       <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">Готово ${doneN} из ${total}${pct === 100 && total ? ' 🎉' : ''}</span></div>
       <div class="ring-pct">${pct}%</div>
     </div>
-    <button class="btn wide mb" data-act="timer-new">${icon('timer')} Таймер</button>
+    <div class="row gap mb">
+      <button class="btn grow" data-act="timer-new">${icon('timer')} Таймер</button>
+      <button class="btn grow" data-act="plan">${icon('send')} План в Telegram</button>
+    </div>
     ${timersCard()}
     ${chips('plist', st.list, [
       { id: 'active', label: 'Активные', count: by.active.length },
@@ -334,6 +302,7 @@ export function prepScreen() {
         },
         timer: (t) => startTimer(S.get('prepItems', t.dataset.id)?.name || '', t.dataset.id),
         'timer-new': () => startTimer(''),
+        plan: () => push(planScreen()),
         'timer-del': async (t) => {
           const tm = S.get('timers', t.dataset.id);
           if (tm && tm.endsAt > Date.now() && !(await confirmDialog(`Отменить таймер «${tm.label}»?`, 'Отменить', true))) return;

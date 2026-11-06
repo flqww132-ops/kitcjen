@@ -7,7 +7,7 @@ import { inTelegram, copyText, haptic } from '../tg.js';
 import { photoAll, photoPut, photoClear } from '../idb.js';
 import { icon, busy, segmented } from './common.js';
 import { getThemeMode, setThemeMode } from '../theme.js';
-import { botUrl, setBotUrl, remState, testBot, syncReminders } from '../reminders.js';
+import { botUrl, setBotUrl, remState, testBot, syncReminders, botReady, sendFile } from '../reminders.js';
 
 const LISTS = {
   categories: { title: 'Категории', one: 'категорию', usage: () => [...S.list('recipes'), ...S.list('ideas')].map((r) => r.categoryId), field: 'categoryId', where: ['recipes', 'ideas'] },
@@ -87,6 +87,7 @@ export function settingsScreen() {
         </div>
         <div class="group-title">Резервная копия</div>
         <div class="card list-card">
+          ${row('backup-chat', '#007AFF', 'send', 'Прислать копию в чат с ботом (с фото)')}
           ${row('backup-file', '#5856D6', 'download', 'Сохранить файл (с фото)')}
           ${row('backup-text', '#30B0C7', 'copy', 'Скопировать текстом (без фото)')}
           ${row('restore-file', '#AF52DE', 'file', 'Восстановить из файла')}
@@ -116,6 +117,19 @@ export function settingsScreen() {
         sync: async () => { await S.syncNow(); refresh(); },
         list: (t) => push(listEditor(t.dataset.k)),
         'backup-file': backupFile,
+        'backup-chat': async () => {
+          if (!botReady()) { toast(!botUrl() ? 'Сначала подключите бота (блок «Напоминания в Telegram» выше)' : 'Отправка работает внутри Telegram', 'error'); return; }
+          const done = busy('Готовлю копию…');
+          try {
+            const data = await makeBackup(true);
+            const d = new Date();
+            const name = `kniga-kuhni-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            await sendFile(blob, name, `Резервная копия «Книги кухни» от ${d.toLocaleString('ru-RU')}. Чтобы восстановить: Настройки → Восстановить из файла.`);
+            haptic('success');
+            toast('Копия отправлена в чат с ботом');
+          } catch (e) { toast(e.message || String(e), 'error'); } finally { done(); }
+        },
         'backup-text': async () => {
           const text = JSON.stringify(await makeBackup(false));
           if (await copyText(text)) toast('Копия скопирована. Сохраните её, например, в «Избранное» Telegram.');

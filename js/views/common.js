@@ -109,9 +109,9 @@ export function segmented(name, value, options) {
     html`<button class="${o.id === value ? 'on' : ''}" data-act="seg" data-seg="${name}" data-v="${o.id}">${o.label}</button>`)}</div>`;
 }
 
-export function chips(name, value, options) {
+export function chips(name, value, options, act = 'chip') {
   return html`<div class="chips" data-chips="${name}">${options.map((o) =>
-    html`<button class="chip ${o.id === value ? 'on' : ''}" data-act="chip" data-chips="${name}" data-v="${o.id}">${o.label}${o.count != null ? html` <b>${o.count}</b>` : ''}</button>`)}</div>`;
+    html`<button class="chip ${o.id === value ? 'on' : ''}" data-act="${act}" data-chips="${name}" data-v="${o.id}">${o.label}${o.count != null ? html` <b>${o.count}</b>` : ''}</button>`)}</div>`;
 }
 
 // Полупрозрачная заглушка «Подождите…»

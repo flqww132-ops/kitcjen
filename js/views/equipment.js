@@ -32,13 +32,13 @@ function sorted(items) {
 
 function eqCard(e) {
   return html`<div class="card ecard u-line-${e.urgency} ${e.status === 'received' ? 'done' : ''}">
-    <button class="ec-main" data-act="open" data-id="${e.id}">
+    <button class="ec-main" data-act="eq-open" data-id="${e.id}">
       <div class="ic-top"><span class="rc-title">${e.name}</span><span class="badge u-${e.urgency}">${uLabel(e.urgency)}</span></div>
       <div class="rc-sub">${e.qty ? html`<b>${e.qty}</b>` : ''}${e.qty && e.supplier ? ' · ' : ''}${e.supplier || ''}</div>
       ${e.note ? html`<div class="ic-desc">${e.note}</div>` : ''}
     </button>
-    ${e.link ? html`<button class="ec-link" data-act="link" data-id="${e.id}">${icon('link')} ${e.link.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)}</button>` : ''}
-    <div class="seg small" role="group">${EQ_STATUS.map((s) => html`<button class="${e.status === s.id ? 'on s-' + s.id : ''}" data-act="status" data-id="${e.id}" data-v="${s.id}">${s.label}</button>`)}</div>
+    ${e.link ? html`<button class="ec-link" data-act="eq-link" data-id="${e.id}">${icon('link')} ${e.link.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)}</button>` : ''}
+    <div class="seg small" role="group">${EQ_STATUS.map((s) => html`<button class="${e.status === s.id ? 'on s-' + s.id : ''}" data-act="eq-status" data-id="${e.id}" data-v="${s.id}">${s.label}</button>`)}</div>
   </div>`;
 }
 
@@ -60,50 +60,42 @@ export function equipmentText(items) {
   return L.join('\n');
 }
 
-export function equipmentList() {
+// Раздел «Дозаказ» внутри вкладки «Склад»: оборудование и инвентарь
+export function equipmentSection() {
+  const all = S.list('equipment');
+  const count = (f) => all.filter(f).length;
+  const filters = [
+    { id: 'active', label: 'Активные', count: count((e) => e.status !== 'received') },
+    ...EQ_STATUS.map((s) => ({ ...s, count: count((e) => e.status === s.id) })),
+    { id: '', label: 'Все', count: all.length },
+  ];
+  const items = sorted(all.filter((e) => (st.status === 'active' ? e.status !== 'received' : !st.status || e.status === st.status)));
+  return html`
+    <div class="group-title">Оборудование и инвентарь</div>
+    ${!all.length ? html`<div class="card"><p class="hint mt0">Добавьте, что нужно дозаказать: ножи, гастроёмкости, термощупы… — кнопка «+».</p></div>`
+      : html`${chips('eqstatus', st.status, filters, 'eq-chip')}
+        <div class="muted small pad-x mt">Сортировка: сначала срочные</div>
+        ${items.length ? items.map(eqCard) : html`<div class="empty small">Здесь пусто</div>`}`}`;
+}
+
+export const equipmentNeedText = () => {
+  const list = sorted(S.list('equipment').filter((e) => e.status === 'need'));
+  return list.length ? equipmentText(list) : '';
+};
+
+export function equipmentActs() {
   return {
-    tab: 'equip',
-    title: 'Дозаказ',
-    subtitle: () => { const n = S.list('equipment').filter((e) => e.status === 'need').length; return n ? `${n} к заказу` : 'Оборудование и инвентарь'; },
-    render() {
-      const all = S.list('equipment');
-      const count = (f) => all.filter(f).length;
-      const filters = [
-        { id: 'active', label: 'Активные', count: count((e) => e.status !== 'received') },
-        ...EQ_STATUS.map((s) => ({ ...s, count: count((e) => e.status === s.id) })),
-        { id: '', label: 'Все', count: all.length },
-      ];
-      const items = sorted(all.filter((e) => (st.status === 'active' ? e.status !== 'received' : !st.status || e.status === st.status)));
-      const toOrder = all.filter((e) => e.status === 'need').length;
-      return html`
-        <div class="toolbar sticky">${chips('status', st.status, filters)}</div>
-        ${!all.length ? emptyState('Список пуст', 'Добавьте, что нужно дозаказать: ножи, гастроёмкости, термощупы…', html`<button class="btn primary" data-act="add">Добавить позицию</button>`, '🧰')
-          : html`
-            ${toOrder ? html`<button class="btn wide mb" data-act="share">${icon('share')} Поделиться списком к заказу (${toOrder})</button>` : ''}
-            <div class="muted small pad-x">Сортировка: сначала срочные</div>
-            ${items.length ? items.map(eqCard) : html`<div class="empty small">Здесь пусто</div>`}`}
-        ${fab()}`;
-    },
-    mount(el) {
-      onActs(el, {
-        chip: (t) => { st.status = t.dataset.v; refresh(); },
-        add: () => push(equipmentForm({})),
-        open: (t) => push(equipmentForm({ item: S.get('equipment', t.dataset.id) })),
-        link: (t) => openLink(S.get('equipment', t.dataset.id).link),
-        status: (t) => {
-          const e = S.get('equipment', t.dataset.id);
-          if (e.status === t.dataset.v) return;
-          S.put('equipment', { ...e, status: t.dataset.v });
-          haptic('select');
-          toast(`«${e.name}»: ${EQ_STATUS.find((s) => s.id === t.dataset.v).label.toLowerCase()}`);
-          refresh();
-        },
-        share: async () => {
-          const text = equipmentText(sorted(S.list('equipment').filter((e) => e.status === 'need')));
-          const r = await shareText(text);
-          if (!r.shared) { if (r.copied) toast('Список скопирован — вставьте в чат'); else showText('Список к заказу', text); }
-        },
-      });
+    'eq-chip': (t) => { st.status = t.dataset.v; refresh(); },
+    'eq-add': () => push(equipmentForm({})),
+    'eq-open': (t) => push(equipmentForm({ item: S.get('equipment', t.dataset.id) })),
+    'eq-link': (t) => openLink(S.get('equipment', t.dataset.id).link),
+    'eq-status': (t) => {
+      const e = S.get('equipment', t.dataset.id);
+      if (e.status === t.dataset.v) return;
+      S.put('equipment', { ...e, status: t.dataset.v });
+      haptic('select');
+      toast(`«${e.name}»: ${EQ_STATUS.find((x) => x.id === t.dataset.v).label.toLowerCase()}`);
+      refresh();
     },
   };
 }
@@ -114,7 +106,7 @@ function equipmentForm({ item }) {
   const initial = JSON.stringify(d);
   let saved = false;
   return {
-    tab: 'equip',
+    tab: 'stock',
     form: true,
     title: isNew ? 'Новая позиция' : 'Позиция',
     isDirty: () => !saved && JSON.stringify(d) !== initial,

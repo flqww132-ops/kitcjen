@@ -59,6 +59,18 @@ export async function checkInitData(initData, token) {
   return { user };
 }
 
+async function sendDocument(env, chatId, file, filename, caption) {
+  const base = env.TG_API || 'https://api.telegram.org';
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  if (caption) fd.append('caption', String(caption).slice(0, 1000));
+  fd.append('document', file, filename);
+  const r = await fetch(`${base}/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd });
+  let body = null;
+  try { body = await r.json(); } catch (e) { /* нет */ }
+  return { ok: r.ok && body?.ok, status: r.status, description: body?.description };
+}
+
 async function sendMessage(env, chatId, text) {
   const base = env.TG_API || 'https://api.telegram.org';
   const r = await fetch(`${base}/bot${env.BOT_TOKEN}/sendMessage`, {
@@ -107,6 +119,30 @@ export default {
       return json(await stub.setItems(userId, clean));
     }
     if (url.pathname === '/api/status') return json(await stub.status());
+    // Отправить текст сразу (например, «План на сегодня» по кнопке)
+    if (url.pathname === '/api/send' && req.method === 'POST') {
+      let body;
+      try { body = await req.json(); } catch (e) { return json({ ok: false, error: 'bad_json' }, 400); }
+      const text = String(body?.text || '').trim();
+      if (!text) return json({ ok: false, error: 'empty' }, 400);
+      const parts = [];
+      for (let i = 0; i < text.length && parts.length < 5; i += MAX_TEXT) parts.push(text.slice(i, i + MAX_TEXT));
+      for (const p of parts) {
+        const r = await sendMessage(env, userId, p);
+        if (!r.ok) return json({ ok: false, error: 'telegram', message: r.description || `Telegram ответил ${r.status}` }, 502);
+      }
+      return json({ ok: true });
+    }
+    // Отправить файл в чат (резервная копия, Excel, PDF). multipart/form-data: file, caption
+    if (url.pathname === '/api/send-file' && req.method === 'POST') {
+      let fd;
+      try { fd = await req.formData(); } catch (e) { return json({ ok: false, error: 'bad_form' }, 400); }
+      const file = fd.get('file');
+      if (!file || typeof file === 'string') return json({ ok: false, error: 'no_file' }, 400);
+      if (file.size > 49 * 1024 * 1024) return json({ ok: false, error: 'too_big', message: 'Файл больше 50 МБ — Telegram такой не примет' }, 400);
+      const r = await sendDocument(env, userId, file, String(fd.get('filename') || file.name || 'file'), fd.get('caption') || '');
+      return json(r.ok ? { ok: true } : { ok: false, error: 'telegram', message: r.description || `Telegram ответил ${r.status}` }, r.ok ? 200 : 502);
+    }
     if (url.pathname === '/api/test' && req.method === 'POST') {
       const r = await sendMessage(env, userId, '✅ Бот-напоминальщик «Книги кухни» работает. Напоминания и таймеры будут приходить сюда.');
       return json(r.ok ? { ok: true } : { ok: false, error: 'telegram', message: r.description || `Telegram ответил ${r.status}. Нажмите /start в чате с ботом.` }, r.ok ? 200 : 502);
