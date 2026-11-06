@@ -12,6 +12,7 @@ import { prepScreen } from './views/prep.js';
 import { settingsScreen } from './views/settings.js';
 import { stockScreen } from './views/inventory.js';
 import { initReminders, onRemState } from './reminders.js';
+import './batches.js';
 
 function syncDot() {
   const el = document.getElementById('syncDot');

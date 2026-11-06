@@ -8,8 +8,8 @@ import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
 import { uid, hash, norm, debounce, clone, num } from './util.js';
 
-export const SCHEMA_VERSION = 4;
-export const APP_VERSION = '1.4.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const SCHEMA_VERSION = 5;
+export const APP_VERSION = '1.5.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -26,6 +26,7 @@ export const COLLECTIONS = [
   'locations',   // места хранения (холодильник, морозильник, склад…)
   'invItems',    // позиции инвентаризации: { name, unit, locationId, minQty, supplier, productId?, prepItemId? }
   'invCounts',   // пересчёты: { date, status: 'open'|'done', counts: { invItemId: qty }, finishedAt }
+  'batches',     // партии заготовок (маркировка): { prepItemId, name, qty, madeAt, expiresAt, by, status }
 ];
 
 export const OWN_SOURCE_ID = 'own'; // «Своя разработка» — всегда есть
@@ -97,6 +98,11 @@ const MIGRATIONS = {
     }
     return doc;
   },
+  // 4 → 5: партии заготовок (маркировка и сроки) и срок реализации у заготовок
+  4: (doc) => {
+    for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
+    return doc;
+  },
   0: (doc) => {
     // «нулевая» версия — документ без поля schema: просто приводим к структуре v1
     const out = emptyDoc();
@@ -163,6 +169,7 @@ function compact(doc) {
       if (r.deleted && now - (r.updatedAt || 0) > TOMBSTONE_TTL) delete col[id];
       else if (k === 'prepLog' && now - (r.updatedAt || 0) > PREPLOG_TTL) delete col[id];
       else if (k === 'timers' && r.endsAt && now - r.endsAt > 2 * 864e5) delete col[id];
+      else if (k === 'batches' && r.status !== 'active' && now - (r.closedAt || r.updatedAt || 0) > 30 * 864e5) delete col[id];
     }
   }
 }

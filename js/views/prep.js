@@ -8,6 +8,8 @@ import { haptic, shareText, inTelegram } from '../tg.js';
 import { refSelect, bindRefSelects, fab, emptyState, segmented, chips, icon, inNum } from './common.js';
 import { recipeDetail } from './ttk.js';
 import { planScreen } from './planview.js';
+import { activeBatches, groupBatches, relLeft, fmtDT, expirySettings, saveExpirySettings } from '../batches.js';
+import { W } from '../tg.js';
 import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped, neededOn, statusOf, byTime, prepText } from '../prepcore.js';
 export { prepText };
 import { botUrl } from '../reminders.js';
@@ -106,6 +108,7 @@ function dayView() {
       <div class="pr-line">
         <button class="pr-name" data-act="edit" data-id="${it.id}">${it.name}</button>
         <button class="icon-btn pr-timer" data-act="timer" data-id="${it.id}" aria-label="Таймер">${icon('timer')}</button>
+        <button class="icon-btn pr-tag" data-act="mark" data-id="${it.id}" aria-label="Маркировка">${icon('tag')}</button>
         <button class="pr-x" data-act="close" data-id="${it.id}" aria-label="Завершить без выполнения">${icon('x')}</button>
         <button class="pr-check" data-act="done" data-id="${it.id}" aria-label="Выполнено">${icon('check')}</button>
       </div>
@@ -117,6 +120,7 @@ function dayView() {
       <div class="pr-sub">
         <button class="pr-time ${time ? '' : 'empty'} ${late ? 'late' : ''} ${log.time ? 'custom' : ''}" data-act="time" data-id="${it.id}">${icon('clock')} ${time ? `к ${time}` : 'время'}${late ? ' · просрочено' : ''}</button>
         ${rem ? html`<span class="pr-rem">${icon('bell')} ${it.reminders.map((sec) => (sec ? `за ${fmtDuration(sec)}` : 'в срок')).join(', ')}</span>` : ''}
+        ${it.shelfH ? html`<span class="pr-rem">срок ${shelfLabel(it.shelfH)}</span>` : ''}
         ${it.recipeId && S.get('recipes', it.recipeId) ? html`<button class="linkish" data-act="recipe" data-id="${it.recipeId}">ТТК ›</button>` : ''}
       </div>
     </div>`;
@@ -129,6 +133,7 @@ function dayView() {
       <div class="pr-line">
         <span class="pr-mark ${kind}">${icon(kind === 'done' ? 'check' : 'x')}</span>
         <button class="pr-name" data-act="edit" data-id="${it.id}">${it.name}</button>
+        ${kind === 'done' ? html`<button class="icon-btn pr-tag" data-act="mark" data-id="${it.id}" aria-label="Маркировка">${icon('tag')}</button>` : ''}
         <button class="btn sm" data-act="restore" data-id="${it.id}">Вернуть</button>
       </div>
       <div class="pr-sub">${kind === 'done' ? 'выполнено' : 'завершено без выполнения'}${at ? ` в ${fmtClock(at)}` : ''}${n != null && kind === 'done' ? ` · норма ${fmtNum(n)} ${it.unit}` : ''}</div>
@@ -180,6 +185,121 @@ function weekView() {
     </table></div>`;
 }
 
+
+// ---- Срок реализации, маркировка, «Сроки» --------------------------------------------------
+const shelfSplit = (h) => (!(h > 0) ? { n: null, u: 'h' } : h % 24 === 0 ? { n: h / 24, u: 'd' } : { n: h, u: 'h' });
+const shelfLabel = (h) => { const x = shelfSplit(h); return x.n ? `${fmtNum(x.n)} ${x.u === 'd' ? 'сут' : 'ч'}` : ''; };
+const toLocalInput = (ts) => { const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+function expLabel() {
+  const g = groupBatches();
+  const n = g.over.length + g.today.length;
+  return n ? `Сроки · ${n}` : 'Сроки';
+}
+
+async function markFlow(it) {
+  if (!it) return;
+  const iso = dateISO(dayDate());
+  const wd = weekdayIdx(dayDate());
+  const log = getLog(iso, it.id);
+  const qty0 = toMake(it, wd, log) || normOf(it, wd);
+  const who0 = lsGet('kb_who') || W?.initDataUnsafe?.user?.first_name || '';
+  const sh = shelfSplit(it.shelfH);
+  const r = await sheet({
+    title: `Маркировка: ${it.name}`,
+    body: html`
+      <label class="fld"><span>Изготовлено</span><input class="inp" type="datetime-local" id="mMade" value="${toLocalInput(Date.now())}"></label>
+      <div class="row gap">
+        <label class="fld grow"><span>Срок реализации</span><input class="inp" id="mShelf" inputmode="decimal" value="${inNum(sh.n)}" placeholder="часов или суток"></label>
+        <label class="fld w100"><span>Ед.</span><select class="inp" id="mShelfU"><option value="h" ${sh.u === 'h' ? 'selected' : ''}>ч</option><option value="d" ${sh.u === 'd' ? 'selected' : ''}>сут</option></select></label>
+      </div>
+      <div class="mark-until">Годен до: <b id="mUntil">—</b></div>
+      <div class="row gap">
+        <label class="fld grow"><span>Количество</span><input class="inp" id="mQty" inputmode="decimal" value="${inNum(qty0)}"></label>
+        <label class="fld w100"><span>Ед.</span><input class="inp" id="mUnit" value="${it.unit || ''}"></label>
+      </div>
+      <label class="fld"><span>Кто сделал</span><input class="inp" id="mWho" value="${who0}" placeholder="Имя"></label>`,
+    buttons: [
+      { label: 'Отмена', kind: 'ghost' },
+      {
+        label: 'Сохранить', kind: 'primary', value: (w) => {
+          const made = new Date(w.querySelector('#mMade').value).getTime() || Date.now();
+          const n = num(w.querySelector('#mShelf').value);
+          const hours = n > 0 ? (w.querySelector('#mShelfU').value === 'd' ? n * 24 : n) : null;
+          return { made, hours, qty: num(w.querySelector('#mQty').value), unit: w.querySelector('#mUnit').value.trim(), who: w.querySelector('#mWho').value.trim() };
+        },
+      },
+    ],
+    onMount: (el) => {
+      const upd = () => {
+        const made = new Date(el.querySelector('#mMade').value).getTime();
+        const n = num(el.querySelector('#mShelf').value);
+        const h = n > 0 ? (el.querySelector('#mShelfU').value === 'd' ? n * 24 : n) : null;
+        el.querySelector('#mUntil').textContent = made && h ? fmtDT(made + h * 3600e3) : 'укажите срок реализации';
+      };
+      el.addEventListener('input', upd); el.addEventListener('change', upd); upd();
+    },
+  });
+  if (!r) return;
+  if (!r.hours) { toast('Укажите срок реализации — без него не посчитать «годен до»', 'error'); return; }
+  if (r.who) lsSet('kb_who', r.who);
+  if (!it.shelfH) S.put('prepItems', { ...it, shelfH: r.hours }); // запомним срок у позиции
+  const b = S.put('batches', { id: uid(), prepItemId: it.id, name: it.name, unit: r.unit, qty: r.qty, madeAt: r.made, expiresAt: r.made + r.hours * 3600e3, by: r.who, status: 'active' });
+  haptic('success');
+  showLabel(b);
+}
+
+function showLabel(b) {
+  if (!b) return;
+  const el = document.createElement('div');
+  el.className = 'label-view';
+  el.innerHTML = String(html`<div class="label-card">
+      <div class="lb-name">${b.name}</div>
+      <div class="lb-row"><span>Изготовлено</span><b>${fmtDT(b.madeAt)}</b></div>
+      <div class="lb-row big"><span>Годен до</span><b>${fmtDT(b.expiresAt)}</b></div>
+      ${b.qty != null ? html`<div class="lb-row"><span>Количество</span><b>${fmtNum(b.qty)} ${b.unit || ''}</b></div>` : ''}
+      ${b.by ? html`<div class="lb-row"><span>Кто</span><b>${b.by}</b></div>` : ''}
+    </div>
+    <p class="lb-hint">Перепишите на стикер. Партия сохранена в «Заготовки → Сроки».</p>
+    <button class="btn primary wide">Готово</button>`);
+  el.querySelector('.btn').addEventListener('click', () => { el.remove(); refresh(); });
+  document.body.appendChild(el);
+}
+
+async function closeBatch(id, status) {
+  const b = S.get('batches', id);
+  if (!b) return;
+  if (status === 'written' && !(await confirmDialog(`Списать «${b.name}»?`, 'Списать', true))) return;
+  S.put('batches', { ...b, status, closedAt: Date.now() });
+  haptic(status === 'used' ? 'success' : 'light');
+  toast(status === 'used' ? 'Отмечено: использовано' : 'Списано');
+  refresh();
+}
+
+function expView() {
+  const now = Date.now();
+  const g = groupBatches(now);
+  const e = expirySettings();
+  const row = (b) => html`<div class="brow ${b.expiresAt <= now ? 'over' : ''}">
+    <button class="b-main" data-act="b-label" data-id="${b.id}">
+      <div class="b-name">${b.name}${b.qty != null ? html` <small>${fmtNum(b.qty)} ${b.unit || ''}</small>` : ''}</div>
+      <div class="b-sub">до ${fmtDT(b.expiresAt)} · ${relLeft(b.expiresAt, now)}${b.by ? ` · ${b.by}` : ''}</div>
+    </button>
+    <div class="b-btns">
+      <button class="btn sm" data-act="b-used" data-id="${b.id}">Использовано</button>
+      <button class="btn sm ghost danger" data-act="b-written" data-id="${b.id}">Списано</button>
+    </div>
+  </div>`;
+  const block = (title, list, cls = '') => (list.length ? html`<div class="group-title ${cls}">${title} · ${list.length}</div><div class="card list-card">${list.map(row)}</div>` : '');
+  const total = activeBatches().length;
+  return html`
+    <div class="card">
+      <label class="switch-row" style="margin:0" data-act="exp-alerts"><input type="checkbox" ${e.alerts ? 'checked' : ''}><span class="sw"></span><span class="sw-text"><b>Предупреждать в Telegram</b><small>о конце срока — бот напишет заранее</small></span></label>
+      ${e.alerts ? html`<button class="btn wide mt" data-act="exp-lead">${icon('bell')} ${e.lead ? `за ${fmtDuration(e.lead)} до конца срока` : 'в момент окончания срока'}</button>` : ''}
+    </div>
+    ${total ? html`${block('Просрочено', g.over, 'danger-text')}${block('Истекает сегодня', g.today)}${block('Завтра', g.tomorrow)}${block('Позже', g.later)}`
+      : emptyState('Партий пока нет', 'Нажмите 🏷 у заготовки на «Сегодня», чтобы промаркировать её — партия появится здесь со сроком годности.', '', '🏷')}`;
+}
+
 export function prepScreen() {
   // Остаток сохраняем с небольшой задержкой, чтобы не писать на каждую цифру
   let pending = null, timer = null;
@@ -204,9 +324,9 @@ export function prepScreen() {
     render() {
       const any = S.list('prepItems').length;
       return html`
-        <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }])}</div>
+        <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }, { id: 'exp', label: expLabel() }])}</div>
         ${!any ? html`${timersCard()}${emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу, норму и время на каждый день недели.', html`<div class="stack"><button class="btn primary" data-act="add">Добавить позицию</button><button class="btn" data-act="timer-new">${icon('timer')} Таймер</button></div>`, '🔪')}`
-          : st.mode === 'week' ? weekView() : dayView()}
+          : st.mode === 'week' ? weekView() : st.mode === 'exp' ? expView() : dayView()}
         ${fab()}`;
     },
     mount(el) {
@@ -303,6 +423,17 @@ export function prepScreen() {
         timer: (t) => startTimer(S.get('prepItems', t.dataset.id)?.name || '', t.dataset.id),
         'timer-new': () => startTimer(''),
         plan: () => push(planScreen()),
+        mark: (t) => markFlow(S.get('prepItems', t.dataset.id)),
+        'b-used': (t) => closeBatch(t.dataset.id, 'used'),
+        'b-written': (t) => closeBatch(t.dataset.id, 'written'),
+        'b-label': (t) => showLabel(S.get('batches', t.dataset.id)),
+        'exp-alerts': () => { const e = expirySettings(); e.alerts = !e.alerts; saveExpirySettings(e); refresh(); },
+        'exp-lead': async () => {
+          const e = expirySettings();
+          const r = await durationSheet('Предупреждать за сколько до конца срока?', { initial: e.lead, okLabel: 'Готово', allowZero: true });
+          if (!r) return;
+          e.lead = r.sec; saveExpirySettings(e); refresh();
+        },
         'timer-del': async (t) => {
           const tm = S.get('timers', t.dataset.id);
           if (tm && tm.endsAt > Date.now() && !(await confirmDialog(`Отменить таймер «${tm.label}»?`, 'Отменить', true))) return;
@@ -369,6 +500,10 @@ function prepForm({ item }) {
           <label class="fld w100"><span>Единица</span><select class="inp" data-f="unit">${[...new Set([...PREP_UNITS, d.unit])].map((u) => html`<option ${u === d.unit ? 'selected' : ''}>${u}</option>`)}</select></label>
           <label class="fld grow"><span>Количество (на каждый день)</span><input class="inp" id="qtyAll" inputmode="decimal" value="${inNum(sameNorm())}" placeholder="${normsDiffer() ? 'разное по дням' : 'не задано'}"></label>
         </div>
+        <div class="row gap">
+          <label class="fld grow"><span>Срок реализации</span><input class="inp" id="shelfN" inputmode="decimal" value="${inNum(shelfSplit(d.shelfH).n)}" placeholder="например, 48"></label>
+          <label class="fld w100"><span>Ед.</span><select class="inp" id="shelfU"><option value="h" ${shelfSplit(d.shelfH).u === 'h' ? 'selected' : ''}>ч</option><option value="d" ${shelfSplit(d.shelfH).u === 'd' ? 'selected' : ''}>сут</option></select></label>
+        </div>
         <label class="fld"><span>ТТК (необязательно)</span><select class="inp" data-f="recipeId">
           <option value="">— нет —</option>
           ${recipes.map((r) => html`<option value="${r.id}" ${r.id === d.recipeId ? 'selected' : ''}>${r.name}</option>`)}
@@ -410,6 +545,11 @@ function prepForm({ item }) {
       bindRefSelects(el, (f, v) => { d[f] = v; });
       el.addEventListener('input', (e) => {
         const t = e.target;
+        if (t.id === 'shelfN' || t.id === 'shelfU') {
+          const nv = num(el.querySelector('#shelfN').value);
+          d.shelfH = nv > 0 ? (el.querySelector('#shelfU').value === 'd' ? nv * 24 : nv) : null;
+          return;
+        }
         if (t.id === 'qtyAll') {
           const v = num(t.value);
           d.norms = Array(7).fill(v);
