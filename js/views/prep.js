@@ -1,7 +1,7 @@
 // Раздел «Заготовки»: нормы и время «Сделать к» по дням недели, напоминания в Telegram, таймеры.
 // Режимы «Сегодня/Завтра» и «Неделя».
 
-import { html, uid, clone, num, fmtNum, WEEKDAYS, dateISO, addDays, weekdayIdx, fmtDayLong, fmtDuration, fmtCountdown, fmtClock } from '../util.js';
+import { html, uid, clone, num, fmtNum, lsGet, lsSet, WEEKDAYS, dateISO, addDays, weekdayIdx, fmtDayLong, fmtDuration, fmtCountdown, fmtClock } from '../util.js';
 import * as S from '../store.js';
 import { push, back, refresh, toast, confirmDialog, onActs, showText, sheet } from '../ui.js';
 import { haptic, shareText, inTelegram } from '../tg.js';
@@ -152,7 +152,6 @@ function dayView() {
       <div class="pr-sub">
         <button class="pr-time ${time ? '' : 'empty'} ${late ? 'late' : ''} ${log.time ? 'custom' : ''}" data-act="time" data-id="${it.id}">${icon('clock')} ${time ? `к ${time}` : 'время'}${late ? ' · просрочено' : ''}</button>
         ${rem ? html`<span class="pr-rem">${icon('bell')} ${it.reminders.map((sec) => (sec ? `за ${fmtDuration(sec)}` : 'в срок')).join(', ')}</span>` : ''}
-        ${it.shelfLife ? html`<span>хранение: ${it.shelfLife}</span>` : ''}
         ${it.recipeId && S.get('recipes', it.recipeId) ? html`<button class="linkish" data-act="recipe" data-id="${it.recipeId}">ТТК ›</button>` : ''}
       </div>
     </div>`;
@@ -369,7 +368,22 @@ function prepForm({ item }) {
   d.reminders = Array.isArray(d.reminders) ? d.reminders : [];
   const initial = JSON.stringify(d);
   let saved = false;
+  let daysOpen = lsGet('kb_daysOpen') === '1';
   const recipes = S.list('recipes').sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  // Одинаковая норма на все дни (или null) и сводка для свёрнутого блока
+  const filled = () => d.norms.map((v) => (num(v) > 0 ? num(v) : null));
+  const normsDiffer = () => new Set(filled().map(String)).size > 1;
+  const sameNorm = () => (normsDiffer() ? null : filled()[0]);
+  const daysSummary = () => {
+    const parts = [];
+    if (normsDiffer()) parts.push('норма разная по дням');
+    else if (sameNorm() != null) parts.push(`${fmtNum(sameNorm())} ${d.unit} каждый день`);
+    else parts.push('каждый день, без нормы');
+    const ts = new Set(d.times.map((t) => t || ''));
+    if (ts.size > 1) parts.push('время по дням');
+    else if (d.times[0]) parts.push(`к ${d.times[0]}`);
+    return parts.join(' · ');
+  };
   const remChips = () => html`${d.reminders.length
     ? [...d.reminders].sort((a, b) => b - a).map((s) => html`<span class="rchip">${icon('bell')} ${s ? `за ${fmtDuration(s)}` : 'в срок'}<button data-act="rem-del" data-s="${s}" aria-label="Убрать">${icon('x')}</button></span>`)
     : html`<span class="muted small">Напоминаний нет</span>`}`;
@@ -384,7 +398,7 @@ function prepForm({ item }) {
         <label class="fld"><span>Цех / станция</span>${refSelect('stations', d.stationId, { field: 'stationId', addLabel: '＋ Новый цех…' })}</label>
         <div class="row gap">
           <label class="fld w100"><span>Единица</span><select class="inp" data-f="unit">${[...new Set([...PREP_UNITS, d.unit])].map((u) => html`<option ${u === d.unit ? 'selected' : ''}>${u}</option>`)}</select></label>
-          <label class="fld grow"><span>Срок хранения</span><input class="inp" data-f="shelfLife" value="${d.shelfLife}" placeholder="Например, 48 ч"></label>
+          <label class="fld grow"><span>Количество (на каждый день)</span><input class="inp" id="qtyAll" inputmode="decimal" value="${inNum(sameNorm())}" placeholder="${normsDiffer() ? 'разное по дням' : 'не задано'}"></label>
         </div>
         <label class="fld"><span>ТТК (необязательно)</span><select class="inp" data-f="recipeId">
           <option value="">— нет —</option>
@@ -392,7 +406,12 @@ function prepForm({ item }) {
         </select></label>
       </div>
       <div class="card">
-        <div class="card-title">Норма и время по дням</div>
+        <button class="collapse-head ${daysOpen ? 'open' : ''}" data-act="toggle-days">
+          <span class="card-title">Норма и время по дням</span>
+          <span class="ch-sum" id="daysSum">${daysSummary()}</span>
+          <span class="chev">${icon('down')}</span>
+        </button>
+        <div class="collapse-body" id="daysBody" ${daysOpen ? '' : 'hidden'}>
         <div class="dgrid">
           <div class="dg-h"></div><div class="dg-h">Норма, <span class="unit-now">${d.unit}</span></div><div class="dg-h">Сделать к</div><div class="dg-h"></div>
           ${WEEKDAYS.map((w, i) => html`
@@ -406,7 +425,8 @@ function prepForm({ item }) {
           <div></div>
         </div>
         <button class="btn wide mt" data-act="all">Заполнить все дни</button>
-        <p class="hint">Пустая норма — в этот день позиция не нужна. Время можно оставить пустым.</p>
+        <p class="hint">Пустая норма — в этот день позиция не нужна (если нормы не заданы совсем — нужна каждый день). Время можно оставить пустым.</p>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">Напоминания в Telegram</div>
@@ -421,18 +441,37 @@ function prepForm({ item }) {
       bindRefSelects(el, (f, v) => { d[f] = v; });
       el.addEventListener('input', (e) => {
         const t = e.target;
-        if (t.dataset.wd != null) d.norms[+t.dataset.wd] = num(t.value);
+        if (t.id === 'qtyAll') {
+          const v = num(t.value);
+          d.norms = Array(7).fill(v);
+          el.querySelectorAll('[data-wd]').forEach((i) => { i.value = inNum(v); });
+          el.querySelector('#daysSum').textContent = daysSummary();
+          return;
+        }
+        if (t.dataset.wd != null) {
+          d.norms[+t.dataset.wd] = num(t.value);
+          const q = el.querySelector('#qtyAll');
+          q.value = inNum(sameNorm());
+          q.placeholder = normsDiffer() ? 'разное по дням' : 'не задано';
+        }
         else if (t.dataset.time != null) {
           d.times[+t.dataset.time] = t.value || '';
+          el.querySelector('#daysSum').textContent = daysSummary();
           const b = el.querySelector(`[data-act="time-clear"][data-i="${t.dataset.time}"]`);
           if (b) b.disabled = !t.value;
         } else if (t.dataset.f && t.dataset.f !== 'stationId') {
           d[t.dataset.f] = t.value;
-          if (t.dataset.f === 'unit') el.querySelector('.unit-now').textContent = t.value;
+          if (t.dataset.f === 'unit') { el.querySelector('.unit-now').textContent = t.value; el.querySelector('#daysSum').textContent = daysSummary(); }
         }
       });
       const redrawRems = () => { el.querySelector('#rems').innerHTML = String(remChips()); };
       onActs(el, {
+        'toggle-days': (t) => {
+          daysOpen = !daysOpen;
+          lsSet('kb_daysOpen', daysOpen ? '1' : '0');
+          el.querySelector('#daysBody').hidden = !daysOpen;
+          t.classList.toggle('open', daysOpen);
+        },
         all: () => {
           const v = num(el.querySelector('#allNorm').value);
           const tm = el.querySelector('#allTime').value;
@@ -443,6 +482,8 @@ function prepForm({ item }) {
             el.querySelectorAll('[data-time]').forEach((i) => { i.value = tm; });
             el.querySelectorAll('[data-act="time-clear"]').forEach((b) => { b.disabled = false; });
           }
+          el.querySelector('#qtyAll').value = inNum(sameNorm());
+          el.querySelector('#daysSum').textContent = daysSummary();
           haptic('select');
         },
         'time-clear': (t) => {
@@ -450,6 +491,7 @@ function prepForm({ item }) {
           d.times[i] = '';
           el.querySelector(`[data-time="${i}"]`).value = '';
           t.disabled = true;
+          el.querySelector('#daysSum').textContent = daysSummary();
         },
         'rem-add': async () => {
           const r = await durationSheet('Напомнить заранее — за сколько до «Сделать к»?', { okLabel: 'Добавить', allowZero: true });

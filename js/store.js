@@ -6,10 +6,10 @@
 
 import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
-import { uid, hash, norm, debounce, clone } from './util.js';
+import { uid, hash, norm, debounce, clone, num } from './util.js';
 
-export const SCHEMA_VERSION = 3;
-export const APP_VERSION = '1.2.0';
+export const SCHEMA_VERSION = 4;
+export const APP_VERSION = '1.3.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -82,6 +82,19 @@ const MIGRATIONS = {
     for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
     const seed = seedRecords().locations;
     for (const [id, r] of Object.entries(seed)) if (!doc.c.locations[id]) doc.c.locations[id] = r;
+    return doc;
+  },
+  // 3 → 4: «Срок хранения» у заготовок заменён на «Количество». Если там было просто число и норм нет —
+  // переносим его в количество на все дни.
+  3: (doc) => {
+    for (const r of Object.values(doc.c.prepItems || {})) {
+      if (r.deleted) continue;
+      const hasNorm = (r.norms || []).some((v) => num(v) > 0);
+      if (!hasNorm && /^\s*\d+([.,]\d+)?\s*$/.test(r.shelfLife || '')) {
+        r.norms = Array(7).fill(num(r.shelfLife));
+        r.shelfLife = '';
+      }
+    }
     return doc;
   },
   0: (doc) => {

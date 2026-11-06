@@ -652,3 +652,15 @@ body:not(.root) .fab { display: none; }
 .chips + .group-title, .chips + .empty { margin-top: 12px; }
 [data-chips="plist"] { overflow: visible; margin: 0; padding: 0 0 4px; gap: 6px; }
 [data-chips="plist"] .chip { flex: 1; min-width: 0; padding: 9px 4px; font-size: 13.5px; text-align: center; overflow: hidden; text-overflow: ellipsis; }
+
+/* Поля в одну строку — на одной высоте */
+.row.gap > .fld:last-child { margin-bottom: 14px; }
+.card > .row.gap:last-child > .fld { margin-bottom: 0; }
+/* Сворачиваемый блок */
+.collapse-head { display: flex; align-items: center; gap: 8px; width: 100%; flex-wrap: wrap; text-align: left; }
+.collapse-head .card-title { margin: 0; flex: 1; }
+.collapse-head .ch-sum { order: 3; width: 100%; font-size: 14px; color: var(--text); font-weight: 500; margin-top: 4px; }
+.collapse-head.open .ch-sum { display: none; }
+.collapse-head .chev { color: var(--accent-text); transition: transform .2s; }
+.collapse-head.open .chev { transform: rotate(180deg); }
+.collapse-body { margin-top: 12px; }
