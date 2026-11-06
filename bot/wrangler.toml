@@ -4,6 +4,8 @@ name = "kniga-kuhni-bot"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 workers_dev = true
+# Не стирать переменные, добавленные в панели Cloudflare, при каждой сборке
+keep_vars = true
 
 [[durable_objects.bindings]]
 name = "SCHEDULER"
