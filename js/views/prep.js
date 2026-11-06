@@ -325,7 +325,7 @@ export function prepScreen() {
       const any = S.list('prepItems').length;
       return html`
         <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }, { id: 'exp', label: expLabel() }])}</div>
-        ${!any ? html`${timersCard()}${emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу, норму и время на каждый день недели.', html`<div class="stack"><button class="btn primary" data-act="add">Добавить позицию</button><button class="btn" data-act="timer-new">${icon('timer')} Таймер</button></div>`, '🔪')}`
+        ${!any ? html`${timersCard()}${emptyState('Матрица заготовок пуста', 'Добавьте позиции: название, цех, единицу, норму и время на каждый день недели.', html`<div class="stack"><button class="btn primary" data-act="add">Добавить позицию</button><button class="btn" data-act="timer-new">${icon('timer')} Таймер</button><button class="btn" data-act="plan">${icon('send')} План в Telegram</button></div>`, '🔪')}`
           : st.mode === 'week' ? weekView() : st.mode === 'exp' ? expView() : dayView()}
         ${fab()}`;
     },

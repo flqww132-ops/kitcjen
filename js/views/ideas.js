@@ -2,11 +2,11 @@
 
 import { html, uid, clone, plural, norm } from '../util.js';
 import * as S from '../store.js';
-import { push, back, replace, refresh, toast, confirmDialog, onActs, actionSheet } from '../ui.js';
+import { push, back, replace, refresh, toast, confirmDialog, onActs, actionSheet, setTab } from '../ui.js';
 import { haptic } from '../tg.js';
 import { IDEA_STATUSES, statusLabel, parseIdeasText, CLAUDE_IDEAS_PROMPT, emptyRecipe } from '../textfmt.js';
 import { refSelect, bindRefSelects, fab, emptyState, chips, segmented, icon, catTag } from './common.js';
-import { recipeForm, recipeDetail, pasteScreen } from './ttk.js';
+import { recipeForm, recipeDetail, pasteScreen, ttkState, ttkSwitch } from './ttk.js';
 
 const st = { status: '' };
 
@@ -22,7 +22,7 @@ function ideaCard(i) {
 
 export function ideasList() {
   return {
-    tab: 'ideas',
+    tab: 'ttk',
     title: 'Идеи',
     subtitle: () => { const n = S.list('ideas').length; return n ? `${n} ${plural(n, 'идея', 'идеи', 'идей')}` : 'Что попробовать'; },
     render() {
@@ -31,7 +31,7 @@ export function ideasList() {
       const items = all.filter((i) => !st.status || i.status === st.status)
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       return html`
-        <div class="toolbar sticky">${chips('status', st.status, [{ id: '', label: 'Все', count: all.length }, ...IDEA_STATUSES.map((s) => ({ ...s, count: counts[s.id] }))])}</div>
+        <div class="toolbar sticky">${ttkSwitch()}<div class="mt">${chips('status', st.status, [{ id: '', label: 'Все', count: all.length }, ...IDEA_STATUSES.map((s) => ({ ...s, count: counts[s.id] }))])}</div></div>
         ${!all.length ? emptyState('Идей пока нет', 'Запишите первую идею или вставьте список, который прислал Claude.', html`
           <div class="stack"><button class="btn primary" data-act="new">Новая идея</button><button class="btn" data-act="paste">${icon('text')} Вставить идеи из текста</button></div>`, '💡')
         : items.length ? items.map(ideaCard) : html`<div class="empty small">В этом статусе пусто</div>`}
@@ -39,6 +39,7 @@ export function ideasList() {
     },
     mount(el) {
       onActs(el, {
+        seg: (t) => { if (t.dataset.seg === 'ttkview') { ttkState.view = t.dataset.v; setTab('ttk'); } },
         chip: (t) => { st.status = t.dataset.v; refresh(); },
         open: (t) => push(ideaForm({ idea: S.get('ideas', t.dataset.id) })),
         new: () => push(ideaForm({})),
@@ -63,7 +64,7 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
   const initial = JSON.stringify(d);
   let saved = false;
   return {
-    tab: 'ideas',
+    tab: 'ttk',
     form: true,
     title: isNew ? 'Новая идея' : draftMode ? 'Проверьте идею' : 'Идея',
     isDirty: () => !saved && JSON.stringify(d) !== initial,
@@ -139,7 +140,7 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
 
 function pasteIdeas() {
   return pasteScreen({
-    tab: 'ideas',
+    tab: 'ttk',
     title: 'Идеи из текста',
     intro: 'Вставьте идеи в формате «=== ИДЕЯ === … === КОНЕЦ ===» или просто список: одна строка — одна идея («Название — описание»).',
     prompt: CLAUDE_IDEAS_PROMPT,
@@ -163,7 +164,7 @@ function pasteIdeas() {
 function ideasPreview(ideas) {
   const items = ideas.map((i) => ({ idea: i, on: true }));
   return {
-    tab: 'ideas',
+    tab: 'ttk',
     form: true,
     title: 'Предпросмотр идей',
     isDirty: () => true,

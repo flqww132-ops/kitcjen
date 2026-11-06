@@ -2,7 +2,7 @@
 
 import { html, uid, lsGet, lsSet, num, fmtNum, norm, clone, toBase, fmtBase, UNITS, plural, debounce } from '../util.js';
 import * as S from '../store.js';
-import { push, back, replace, refresh, toast, actionSheet, confirmDialog, onActs, pickFile, sheet, showText } from '../ui.js';
+import { push, back, replace, refresh, toast, actionSheet, confirmDialog, onActs, pickFile, sheet, showText, setTab } from '../ui.js';
 import { shareText, copyText, haptic } from '../tg.js';
 import { addPhoto, deletePhoto, hydratePhotos, photoURL } from '../photos.js';
 import { recipeToText, parseRecipesText, emptyRecipe, CLAUDE_TTK_PROMPT } from '../textfmt.js';
@@ -42,6 +42,9 @@ const amount = (v, unit) => (v == null ? '—' : `${fmtNum(v)} ${unit || ''}`.tr
 
 // ---- Состояние списка (живёт между перерисовками) ---------------------------------------
 const listState = { q: '', cat: '', src: '' };
+// Переключатель внутри вкладки ТТК: карты или идеи
+export const ttkState = { view: 'cards' };
+export const ttkSwitch = () => segmented('ttkview', ttkState.view, [{ id: 'cards', label: 'Карты' }, { id: 'ideas', label: 'Идеи' }]);
 
 function matches(r, q) {
   if (!q) return true;
@@ -111,6 +114,7 @@ export function recipesList() {
     subtitle: () => { const n = S.list('recipes').length; return n ? `${n} ${plural(n, 'карта', 'карты', 'карт')}` : 'Технико-технологические карты'; },
     render: () => html`
       <div class="toolbar sticky">
+        ${ttkSwitch()}
         <label class="search">${icon('search')}<input id="rq" type="search" placeholder="Поиск по названию и продуктам" value="${listState.q}" enterkeyhint="search"></label>
         <div class="filters">
           <select class="inp sm" id="fcat">${filterOptions('categories', listState.cat, 'Все категории', 'Без категории')}</select>
@@ -127,6 +131,7 @@ export function recipesList() {
       el.querySelector('#fcat').addEventListener('change', (e) => { listState.cat = e.target.value; renderList(el); });
       el.querySelector('#fsrc').addEventListener('change', (e) => { listState.src = e.target.value; renderList(el); });
       onActs(el, {
+        seg: (t) => { if (t.dataset.seg === 'ttkview') { ttkState.view = t.dataset.v; setTab('ttk'); } },
         open: (t) => push(recipeDetail(t.dataset.id)),
         add: () => addMenu(),
         new: () => push(recipeForm({ mode: 'new' })),

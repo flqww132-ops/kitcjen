@@ -8,6 +8,8 @@ import { requestPersist } from './idb.js';
 import { photoGC } from './photos.js';
 import { recipesList } from './views/ttk.js';
 import { ideasList } from './views/ideas.js';
+import { shiftScreen } from './views/shift.js';
+import { ttkState } from './views/ttk.js';
 import { prepScreen } from './views/prep.js';
 import { settingsScreen } from './views/settings.js';
 import { stockScreen } from './views/inventory.js';
@@ -30,15 +32,15 @@ async function main() {
   initTelegram();
   applyTheme();
   await S.loadLocal();
-  registerTab('ttk', recipesList);
-  registerTab('ideas', ideasList);
+  registerTab('ttk', () => (ttkState.view === 'ideas' ? ideasList() : recipesList()));
   registerTab('prep', prepScreen);
   registerTab('stock', stockScreen);
+  registerTab('shift', shiftScreen);
   registerTab('settings', settingsScreen);
   initNav();
   let startTab = 'ttk';
   try { startTab = localStorage.getItem('kb_tab') || 'ttk'; } catch (e) { /* нет */ }
-  setTab(['ttk', 'ideas', 'prep', 'stock', 'settings'].includes(startTab) ? startTab : (startTab === 'equip' ? 'stock' : 'ttk'));
+  setTab(['ttk', 'prep', 'stock', 'shift', 'settings'].includes(startTab) ? startTab : (startTab === 'equip' ? 'stock' : 'ttk'));
   document.getElementById('tabbar').addEventListener('click', () => {
     setTimeout(() => { try { localStorage.setItem('kb_tab', getTab()); } catch (e) { /* нет */ } }, 0);
   });
