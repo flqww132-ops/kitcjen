@@ -5,13 +5,13 @@ import { html, uid, clone, num, fmtNum, WEEKDAYS, dateISO, addDays, weekdayIdx, 
 import * as S from '../store.js';
 import { push, back, refresh, toast, confirmDialog, onActs, showText, sheet } from '../ui.js';
 import { haptic, shareText, inTelegram } from '../tg.js';
-import { refSelect, bindRefSelects, fab, emptyState, segmented, icon, inNum } from './common.js';
+import { refSelect, bindRefSelects, fab, emptyState, segmented, chips, icon, inNum } from './common.js';
 import { recipeDetail } from './ttk.js';
-import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped } from '../prepcore.js';
+import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped, neededOn, statusOf } from '../prepcore.js';
 import { botUrl } from '../reminders.js';
 
 const PREP_UNITS = ['кг', 'г', 'л', 'мл', 'шт', 'порц', 'гастро', 'конт', 'бут'];
-const st = { mode: 'today' };
+const st = { mode: 'today', list: 'active' };
 let tick = null;          // обновление обратного отсчёта таймеров
 const firedTimers = new Set();
 
@@ -29,18 +29,20 @@ function byTime(items, wd, iso) {
 export function prepText(date) {
   const wd = weekdayIdx(date);
   const iso = dateISO(date);
-  const items = sortItems(S.list('prepItems')).filter((i) => normOf(i, wd) > 0);
+  const items = sortItems(S.list('prepItems')).filter((i) => neededOn(i, wd));
   const L = [`Заготовки на ${fmtDayLong(date)}:`];
-  const done = [];
+  const done = [], closed = [];
   for (const g of grouped(items)) {
     const lines = [];
     for (const it of byTime(g.items, wd, iso)) {
       const log = getLog(iso, it.id);
+      const stt = statusOf(log);
+      if (stt === 'done') { done.push(it.name); continue; }
+      if (stt === 'closed') { closed.push(it.name); continue; }
       const m = toMake(it, wd, log);
-      if (log.done) { done.push(it.name); continue; }
-      if (!m) continue;
+      if (m === 0) continue;
       const time = timeOf(it, wd, log);
-      let s = `• ${time ? `к ${time} — ` : ''}${it.name} — ${fmtNum(m)} ${it.unit || ''}`.trim();
+      let s = `• ${time ? `к ${time} — ` : ''}${it.name}${m != null ? ` — ${fmtNum(m)} ${it.unit || ''}` : ''}`.trim();
       if (log.left) s += ` (норма ${fmtNum(normOf(it, wd))}, остаток ${fmtNum(log.left)})`;
       lines.push(s);
     }
@@ -48,6 +50,7 @@ export function prepText(date) {
   }
   if (L.length === 1) L.push('', 'Всё сделано или ничего не нужно 👍');
   if (done.length) L.push('', '✅ Уже готово: ' + done.join(', '));
+  if (closed.length) L.push('', '✖️ Снято: ' + closed.join(', '));
   return L.join('\n');
 }
 
@@ -119,47 +122,74 @@ function dayView() {
   const wd = weekdayIdx(date);
   const now = Date.now();
   const all = sortItems(S.list('prepItems'));
-  const items = all.filter((i) => normOf(i, wd) > 0);
+  const items = all.filter((i) => neededOn(i, wd));
   const skipped = all.length - items.length;
-  const doneN = items.filter((i) => getLog(iso, i.id).done).length;
-  const pct = items.length ? Math.round((doneN / items.length) * 100) : 0;
-  const row = (it) => {
+  const by = { active: [], done: [], closed: [] };
+  for (const it of items) by[statusOf(getLog(iso, it.id))].push(it);
+  const doneN = by.done.length;
+  const total = items.length - by.closed.length;
+  const pct = total ? Math.round((doneN / total) * 100) : 0;
+  const activeRow = (it) => {
     const log = getLog(iso, it.id);
+    const n = normOf(it, wd);
     const m = toMake(it, wd, log);
     const time = timeOf(it, wd, log);
     const dl = deadlineOf(date, time);
-    const late = !log.done && dl && dl < now;
+    const late = dl && dl < now;
     const rem = (it.reminders || []).length;
-    return html`<div class="prow ${log.done ? 'done' : ''} ${late ? 'late' : ''}" data-id="${it.id}">
+    return html`<div class="prow ${late ? 'late' : ''}" data-id="${it.id}">
       <div class="pr-line">
         <button class="pr-name" data-act="edit" data-id="${it.id}">${it.name}</button>
         <button class="icon-btn pr-timer" data-act="timer" data-id="${it.id}" aria-label="Таймер">${icon('timer')}</button>
-        <button class="pr-check ${log.done ? 'on' : ''}" data-act="done" data-id="${it.id}" aria-label="Сделано">${icon('check')}</button>
+        <button class="pr-x" data-act="close" data-id="${it.id}" aria-label="Завершить без выполнения">${icon('x')}</button>
+        <button class="pr-check" data-act="done" data-id="${it.id}" aria-label="Выполнено">${icon('check')}</button>
       </div>
-      <div class="pr-line pr-nums">
-        <span class="pr-norm">норма <b>${fmtNum(normOf(it, wd))}</b> ${it.unit}</span>
+      ${n != null ? html`<div class="pr-line pr-nums">
+        <span class="pr-norm">норма <b>${fmtNum(n)}</b> ${it.unit}</span>
         <label class="pr-left">остаток <input class="inp sm" data-left="${it.id}" inputmode="decimal" value="${inNum(log.left)}" placeholder="0"></label>
         <span class="pr-make">сделать <b data-make="${it.id}">${fmtNum(m)}</b> ${it.unit}</span>
-      </div>
+      </div>` : ''}
       <div class="pr-sub">
         <button class="pr-time ${time ? '' : 'empty'} ${late ? 'late' : ''} ${log.time ? 'custom' : ''}" data-act="time" data-id="${it.id}">${icon('clock')} ${time ? `к ${time}` : 'время'}${late ? ' · просрочено' : ''}</button>
-        ${rem ? html`<span class="pr-rem">${icon('bell')} ${it.reminders.map((s) => (s ? `за ${fmtDuration(s)}` : 'в срок')).join(', ')}</span>` : ''}
+        ${rem ? html`<span class="pr-rem">${icon('bell')} ${it.reminders.map((sec) => (sec ? `за ${fmtDuration(sec)}` : 'в срок')).join(', ')}</span>` : ''}
         ${it.shelfLife ? html`<span>хранение: ${it.shelfLife}</span>` : ''}
         ${it.recipeId && S.get('recipes', it.recipeId) ? html`<button class="linkish" data-act="recipe" data-id="${it.recipeId}">ТТК ›</button>` : ''}
       </div>
     </div>`;
   };
+  const closedRow = (it, kind) => {
+    const log = getLog(iso, it.id);
+    const at = kind === 'done' ? log.doneAt : log.closedAt;
+    const n = normOf(it, wd);
+    return html`<div class="prow ${kind}" data-id="${it.id}">
+      <div class="pr-line">
+        <span class="pr-mark ${kind}">${icon(kind === 'done' ? 'check' : 'x')}</span>
+        <button class="pr-name" data-act="edit" data-id="${it.id}">${it.name}</button>
+        <button class="btn sm" data-act="restore" data-id="${it.id}">Вернуть</button>
+      </div>
+      <div class="pr-sub">${kind === 'done' ? 'выполнено' : 'завершено без выполнения'}${at ? ` в ${fmtClock(at)}` : ''}${n != null && kind === 'done' ? ` · норма ${fmtNum(n)} ${it.unit}` : ''}</div>
+    </div>`;
+  };
+  const list = by[st.list] || by.active;
+  const rowFn = st.list === 'active' ? activeRow : (it) => closedRow(it, st.list);
+  const emptyText = { active: items.length ? 'Все задачи на этот день закрыты 👍' : 'На этот день заготовок нет', done: 'Пока ничего не выполнено', closed: 'Ничего не завершено без выполнения' }[st.list];
   return html`
     <div class="card day-card">
       <svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" class="ring-bg"/>${pct ? html`<circle cx="22" cy="22" r="18" class="ring-fg" style="stroke-dasharray:${(113.1 * pct / 100).toFixed(1)} 113.1"/>` : ''}</svg>
-      <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">Готово ${doneN} из ${items.length}${pct === 100 && items.length ? ' 🎉' : ''}</span></div>
+      <div class="day-head"><b>${fmtDayLong(date)}</b><span class="muted">Готово ${doneN} из ${total}${pct === 100 && total ? ' 🎉' : ''}</span></div>
       <div class="ring-pct">${pct}%</div>
     </div>
     <button class="btn wide mb" data-act="timer-new">${icon('timer')} Таймер</button>
     ${timersCard()}
-    ${items.length ? grouped(items).map((g) => html`<div class="group-title">${g.name}</div><div class="card plist">${byTime(g.items, wd, iso).map(row)}</div>`)
-      : html`<div class="empty small">На этот день норм нет</div>`}
-    ${skipped ? html`<div class="muted small pad-x">Без нормы на этот день: ${skipped}</div>` : ''}
+    ${chips('plist', st.list, [
+      { id: 'active', label: 'Активные', count: by.active.length },
+      { id: 'done', label: 'Выполненные', count: by.done.length },
+      { id: 'closed', label: 'Завершённые', count: by.closed.length },
+    ])}
+    ${list.length ? grouped(list).map((g) => html`<div class="group-title">${g.name}</div><div class="card plist">${byTime(g.items, wd, iso).map(rowFn)}</div>`)
+      : html`<div class="empty small">${emptyText}</div>`}
+    ${st.list === 'active' && by.active.length ? html`<p class="hint pad-x">✓ — выполнено, ✕ — завершить без выполнения (не нужно сегодня).</p>` : ''}
+    ${skipped ? html`<div class="muted small pad-x">Не нужны в этот день (норма 0 или пусто): ${skipped}</div>` : ''}
     <div class="row gap mt">
       <button class="btn grow" data-act="share">${icon('share')} Поделиться</button>
       <button class="btn ghost danger" data-act="reset">Сбросить день</button>
@@ -252,18 +282,35 @@ export function prepScreen() {
         }
       });
       onActs(el, {
-        seg: (t) => { st.mode = t.dataset.v; refresh(); },
+        seg: (t) => { flushLeft(); st.mode = t.dataset.v; refresh(); },
         add: () => push(prepForm({})),
         edit: (t) => push(prepForm({ item: S.get('prepItems', t.dataset.id) })),
         recipe: (t) => push(recipeDetail(t.dataset.id)),
+        chip: (t) => { flushLeft(); st.list = t.dataset.v; refresh(); },
         done: (t) => {
           const iso = dateISO(dayDate());
           const id = t.dataset.id;
           flushLeft();
           const prev = getLog(iso, id);
           const leftInput = el.querySelector(`[data-left="${id}"]`);
-          putLog(iso, id, { left: leftInput ? num(leftInput.value) : prev.left, done: !prev.done });
-          haptic(prev.done ? 'light' : 'success');
+          putLog(iso, id, { left: leftInput ? num(leftInput.value) : prev.left, done: true, closed: false, doneAt: Date.now() });
+          haptic('success');
+          toast(`✓ ${S.get('prepItems', id)?.name || ''} — в выполненных`);
+          refresh();
+        },
+        close: (t) => {
+          const iso = dateISO(dayDate());
+          const id = t.dataset.id;
+          flushLeft();
+          putLog(iso, id, { done: false, closed: true, closedAt: Date.now() });
+          haptic('light');
+          toast(`✕ ${S.get('prepItems', id)?.name || ''} — в завершённых`);
+          refresh();
+        },
+        restore: (t) => {
+          putLog(dateISO(dayDate()), t.dataset.id, { done: false, closed: false, doneAt: null, closedAt: null });
+          haptic('select');
+          toast('Вернули в активные');
           refresh();
         },
         time: async (t) => {

@@ -636,3 +636,19 @@ body:not(.root) .fab { display: none; }
 .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .2s; }
 .switch-row input:checked + .sw { background: var(--ok); }
 .switch-row input:checked + .sw::after { transform: translateX(18px); }
+
+/* Списки заготовок: активные / выполненные / завершённые */
+.pr-x { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--hint2); color: var(--hint); display: flex; align-items: center; justify-content: center; flex: none; }
+.pr-x svg { width: 20px; height: 20px; stroke-width: 2.6; }
+.pr-x:active { background: rgba(255, 59, 48, .14); color: var(--danger); border-color: var(--danger); }
+.pr-check { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pr-check:active { background: var(--ok); color: #fff; }
+.pr-mark { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; color: #fff; }
+.pr-mark svg { width: 17px; height: 17px; stroke-width: 3; }
+.pr-mark.done { background: var(--ok); }
+.pr-mark.closed { background: var(--hint2); }
+.prow.done .pr-name, .prow.closed .pr-name { text-decoration: none; color: var(--text); }
+.prow.closed .pr-name { color: var(--hint); text-decoration: line-through; }
+.chips + .group-title, .chips + .empty { margin-top: 12px; }
+[data-chips="plist"] { overflow: visible; margin: 0; padding: 0 0 4px; gap: 6px; }
+[data-chips="plist"] .chip { flex: 1; min-width: 0; padding: 9px 4px; font-size: 13.5px; text-align: center; overflow: hidden; text-overflow: ellipsis; }

@@ -5,6 +5,11 @@ import * as S from './store.js';
 export const logId = (date, itemId) => `${date}|${itemId}`;
 export const getLog = (date, itemId) => S.get('prepLog', logId(date, itemId)) || { left: null, done: false };
 export const normOf = (it, wd) => num(it.norms?.[wd]) ?? null;
+// Нужна ли позиция в этот день: есть норма на день, или нормы не заданы вовсе (тогда — каждый день)
+export const hasAnyNorm = (it) => (it.norms || []).some((v) => num(v) > 0);
+export const neededOn = (it, wd) => normOf(it, wd) > 0 || !hasAnyNorm(it);
+// Статус на день: активна / выполнена (✓) / завершена-снята (✕)
+export const statusOf = (log) => (log?.closed ? 'closed' : log?.done ? 'done' : 'active');
 // Время «Сделать к» на конкретный день: своё на этот день или из графика по дням недели
 export const timeOf = (it, wd, log) => (log && log.time) || it.times?.[wd] || '';
 export const toMake = (it, wd, log) => {

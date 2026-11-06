@@ -4,7 +4,7 @@
 import * as S from './store.js';
 import { W, inTelegram } from './tg.js';
 import { addDays, dateISO, weekdayIdx, fmtDayLong, fmtNum, fmtDuration, hash, debounce, lsGet, lsSet, fmtClock } from './util.js';
-import { getLog, normOf, timeOf, toMake, deadlineOf, sortItems } from './prepcore.js';
+import { getLog, timeOf, toMake, deadlineOf, sortItems, neededOn } from './prepcore.js';
 
 const HORIZON_DAYS = 14;
 export const remState = { state: 'off', message: '', count: null, next: null, at: 0 };
@@ -28,10 +28,9 @@ export function buildSchedule(now = Date.now()) {
     const iso = dateISO(date);
     const wd = weekdayIdx(date);
     for (const it of items) {
-      const n = normOf(it, wd);
-      if (!(n > 0) || !(it.reminders || []).length) continue;
+      if (!neededOn(it, wd) || !(it.reminders || []).length) continue;
       const log = getLog(iso, it.id);
-      if (log.done) continue;
+      if (log.done || log.closed) continue;
       const time = timeOf(it, wd, log);
       const deadline = deadlineOf(date, time);
       if (!deadline) continue;
@@ -42,7 +41,7 @@ export function buildSchedule(now = Date.now()) {
         if (!groups.has(gk)) groups.set(gk, { at, lead: Number(lead) || 0, iso, date, time, deadline, lines: [] });
         const make = toMake(it, wd, log);
         const st = stName(it.stationId);
-        groups.get(gk).lines.push(`• ${it.name} — ${fmtNum(make)} ${it.unit || ''}`.trim() + (st ? ` (${st})` : ''));
+        groups.get(gk).lines.push(`• ${it.name}${make != null ? ` — ${fmtNum(make)} ${it.unit || ''}` : ''}`.trim() + (st ? ` (${st})` : ''));
       }
     }
   }
