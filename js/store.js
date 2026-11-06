@@ -8,8 +8,8 @@ import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
 import { uid, hash, norm, debounce, clone } from './util.js';
 
-export const SCHEMA_VERSION = 2;
-export const APP_VERSION = '1.1.0';
+export const SCHEMA_VERSION = 3;
+export const APP_VERSION = '1.2.0';
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -23,6 +23,9 @@ export const COLLECTIONS = [
   'products',    // справочник продуктов (под будущую себестоимость: цены, поставщики)
   'timers',      // таймеры: { label, endsAt, durationSec, itemId }
   'settings',    // настройки, общие для устройств: { id: 'botUrl', value }
+  'locations',   // места хранения (холодильник, морозильник, склад…)
+  'invItems',    // позиции инвентаризации: { name, unit, locationId, minQty, supplier, productId?, prepItemId? }
+  'invCounts',   // пересчёты: { date, status: 'open'|'done', counts: { invItemId: qty }, finishedAt }
 ];
 
 export const OWN_SOURCE_ID = 'own'; // «Своя разработка» — всегда есть
@@ -30,12 +33,17 @@ export const OWN_SOURCE_ID = 'own'; // «Своя разработка» — в�
 const SEED = {
   categories: ['Закуски', 'Салаты', 'Супы', 'Горячее', 'Гарниры', 'Соусы', 'Десерты', 'Выпечка', 'Заготовки', 'Напитки'],
   stations: ['Холодный цех', 'Горячий цех', 'Кондитерский цех', 'Заготовочный цех'],
+  locations: ['Холодильник', 'Морозильник', 'Сухой склад', 'Овощной склад'],
 };
 
 // Начальные записи с постоянными id и очень старой датой — чтобы два устройства не плодили дубли,
 // а любое изменение пользователя всегда «побеждало».
 function seedRecords() {
-  const out = { categories: {}, stations: {}, restaurants: {} };
+  const out = { categories: {}, stations: {}, restaurants: {}, locations: {} };
+  SEED.locations.forEach((name, i) => {
+    const id = 'seed_loc_' + i;
+    out.locations[id] = { id, name, order: i, updatedAt: 1 };
+  });
   SEED.categories.forEach((name, i) => {
     const id = 'seed_cat_' + i;
     out.categories[id] = { id, name, order: i, updatedAt: 1 };
@@ -67,6 +75,13 @@ const MIGRATIONS = {
       if (!Array.isArray(r.times)) r.times = Array(7).fill('');
       if (!Array.isArray(r.reminders)) r.reminders = [];
     }
+    return doc;
+  },
+  // 2 → 3: склад и инвентаризация — места хранения по умолчанию
+  2: (doc) => {
+    for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
+    const seed = seedRecords().locations;
+    for (const [id, r] of Object.entries(seed)) if (!doc.c.locations[id]) doc.c.locations[id] = r;
     return doc;
   },
   0: (doc) => {

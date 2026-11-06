@@ -11,6 +11,7 @@ import { ideasList } from './views/ideas.js';
 import { equipmentList } from './views/equipment.js';
 import { prepScreen } from './views/prep.js';
 import { settingsScreen } from './views/settings.js';
+import { stockScreen } from './views/inventory.js';
 import { initReminders, onRemState } from './reminders.js';
 
 function syncDot() {
@@ -33,11 +34,12 @@ async function main() {
   registerTab('ideas', ideasList);
   registerTab('equip', equipmentList);
   registerTab('prep', prepScreen);
+  registerTab('stock', stockScreen);
   registerTab('settings', settingsScreen);
   initNav();
   let startTab = 'ttk';
   try { startTab = localStorage.getItem('kb_tab') || 'ttk'; } catch (e) { /* нет */ }
-  setTab(['ttk', 'ideas', 'equip', 'prep', 'settings'].includes(startTab) ? startTab : 'ttk');
+  setTab(['ttk', 'ideas', 'equip', 'prep', 'stock', 'settings'].includes(startTab) ? startTab : 'ttk');
   document.getElementById('tabbar').addEventListener('click', () => {
     setTimeout(() => { try { localStorage.setItem('kb_tab', getTab()); } catch (e) { /* нет */ } }, 0);
   });

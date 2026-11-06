@@ -29,6 +29,8 @@ export const ICONS = {
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/></svg>',
+  box: '<svg viewBox="0 0 24 24"><path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5zM3.5 7.5L12 12l8.5-4.5M12 12v9"/></svg>',
+  xls: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 11l5 6M14 11l-5 6"/></svg>',
   warn: '<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.5"/></svg>',
 };
 export const icon = (name) => raw(`<span class="ico">${ICONS[name]}</span>`);
@@ -119,6 +121,21 @@ export function busy(msg) {
   el.innerHTML = String(html`<div class="busy-box"><div class="spinner"></div><div>${msg}</div></div>`);
   document.body.appendChild(el);
   return () => el.remove();
+}
+
+// Сохранить файл: на телефоне — через «Поделиться», иначе — загрузка
+export async function saveFile(blob, name) {
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return 'shared'; } catch (e) { if (e.name === 'AbortError') return 'cancel'; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  return 'download';
 }
 
 export const inNum = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));

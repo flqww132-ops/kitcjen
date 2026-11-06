@@ -13,6 +13,7 @@ const LISTS = {
   categories: { title: 'Категории', one: 'категорию', usage: () => [...S.list('recipes'), ...S.list('ideas')].map((r) => r.categoryId), field: 'categoryId', where: ['recipes', 'ideas'] },
   restaurants: { title: 'Рестораны', one: 'ресторан', usage: () => S.list('recipes').map((r) => r.sourceId), field: 'sourceId', where: ['recipes'] },
   stations: { title: 'Цеха и станции', one: 'цех', usage: () => S.list('prepItems').map((r) => r.stationId), field: 'stationId', where: ['prepItems'] },
+  locations: { title: 'Места хранения', one: 'место', usage: () => S.list('invItems').map((r) => r.locationId), field: 'locationId', where: ['invItems'] },
 };
 
 function syncBlock() {
@@ -82,6 +83,7 @@ export function settingsScreen() {
           ${row('list', '#FF9500', 'tag', 'Категории', c('categories'), 'data-k="categories"')}
           ${row('list', '#007AFF', 'home', 'Рестораны / источники', c('restaurants'), 'data-k="restaurants"')}
           ${row('list', '#34C759', 'flame', 'Цеха и станции', c('stations'), 'data-k="stations"')}
+          ${row('list', '#A2845E', 'box', 'Места хранения', c('locations'), 'data-k="locations"')}
         </div>
         <div class="group-title">Резервная копия</div>
         <div class="card list-card">
@@ -90,7 +92,7 @@ export function settingsScreen() {
           ${row('restore-file', '#AF52DE', 'file', 'Восстановить из файла')}
           ${row('restore-text', '#A2845E', 'text', 'Восстановить из текста')}
         </div>
-        <p class="hint pad-x">В копии: ${c('recipes')} ТТК, ${c('ideas')} ${plural(c('ideas'), 'идея', 'идеи', 'идей')}, ${c('equipment')} поз. оборудования, ${c('prepItems')} поз. заготовок.</p>
+        <p class="hint pad-x">В копии: ${c('recipes')} ТТК, ${c('ideas')} ${plural(c('ideas'), 'идея', 'идеи', 'идей')}, ${c('equipment')} поз. оборудования, ${c('prepItems')} поз. заготовок, ${c('invItems')} поз. склада, ${c('invCounts')} инвентаризаций.</p>
         <div class="group-title">Очистка</div>
         <div class="card list-card">${row('wipe', '#FF3B30', 'trash', html`<span class="danger-text">Удалить все данные</span>`)}</div>
         <p class="hint pad-x">Удалит всё на этом устройстве и в облаке Telegram. Перед этим лучше сохранить резервную копию.</p>

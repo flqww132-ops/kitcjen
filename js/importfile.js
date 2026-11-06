@@ -12,7 +12,7 @@ const LIBS = {
 const PDF_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
 const loading = {};
-function loadLib(name) {
+export function loadLib(name) {
   const lib = LIBS[name];
   if (window[lib.global]) return Promise.resolve(window[lib.global]);
   if (!loading[name]) {
