@@ -768,7 +768,7 @@ body:not(.root) .fab { display: none; }
 }
 /* Длинные слова переносятся, а не вылезают на соседние кнопки */
 body { overflow-wrap: break-word; }
-.c2-text, .pr-name, .rc-title, .b-name, .old-name, .ic-desc { overflow-wrap: anywhere; hyphens: auto; }
+.c2-text, .pr-name, .rc-title, .b-name, .old-name, .ic-desc { overflow-wrap: anywhere; }
 @media (max-width: 389px) {
   .idea-ing { grid-template-columns: 1fr 1fr 36px; grid-template-areas: "n n d" "q u ."; row-gap: 6px; padding-bottom: 8px; border-bottom: 0.5px solid var(--sep); }
   .idea-ing [data-ii="name"] { grid-area: n; }
