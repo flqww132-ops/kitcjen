@@ -107,7 +107,7 @@ export function recipesList() {
     render: () => html`
       <div class="toolbar sticky">
         ${ttkSwitch()}
-        <label class="search">${icon('search')}<input id="rq" type="search" placeholder="Поиск по названию и продуктам" value="${listState.q}" enterkeyhint="search"></label>
+        <label class="search">${icon('search')}<input id="rq" type="search" placeholder="Поиск: блюдо или продукт" value="${listState.q}" enterkeyhint="search"></label>
         <div class="filters">
           <select class="inp sm" id="fcat">${filterOptions('categories', listState.cat, 'Все категории', 'Без категории')}</select>
           <select class="inp sm" id="fsrc">${filterOptions('restaurants', listState.src, 'Все рестораны', 'Не указан')}</select>

@@ -11,6 +11,10 @@
 //   BOT_TOKEN      — ключ бота от @BotFather (обязательно, секрет)
 //   ALLOWED_USERS  — необязательно: id пользователей Telegram через запятую, кому можно пользоваться ботом
 //   TG_API         — необязательно, для проверки: другой адрес Bot API
+//   APP_URL        — необязательно: адрес приложения (по умолчанию GitHub Pages)
+//
+// Новые версии: раз в 5 минут (cron) бот читает CHANGELOG.md на сайте приложения. Когда там появилась
+// новая версия (и сайт уже обновился), всем, кто подключал бота, приходит сообщение «что нового».
 
 import { DurableObject } from 'cloudflare:workers';
 
@@ -18,6 +22,9 @@ const MAX_ITEMS = 1000;
 const MAX_TEXT = 4000;
 const MAX_AGE_DAYS = 30;          // сколько дней действительна подпись initData
 const STALE_MS = 6 * 3600e3;      // не слать напоминания, опоздавшие больше чем на 6 часов
+const DEFAULT_APP_URL = 'https://flqww132-ops.github.io/kitcjen/';
+const appUrl = (env) => { const u = String(env.APP_URL || DEFAULT_APP_URL); return u.endsWith('/') ? u : u + '/'; };
+const registry = (env) => env.SCHEDULER.get(env.SCHEDULER.idFromName('__registry'));
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -71,20 +78,49 @@ async function sendDocument(env, chatId, file, filename, caption) {
   return { ok: r.ok && body?.ok, status: r.status, description: body?.description };
 }
 
-async function sendMessage(env, chatId, text) {
+async function sendMessage(env, chatId, text, extra = {}) {
   const base = env.TG_API || 'https://api.telegram.org';
   const r = await fetch(`${base}/bot${env.BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, MAX_TEXT), disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, MAX_TEXT), disable_web_page_preview: true, ...extra }),
   });
   let body = null;
   try { body = await r.json(); } catch (e) { /* нет */ }
   return { ok: r.ok && body?.ok, status: r.status, description: body?.description };
 }
 
+// Последняя версия из CHANGELOG.md: { version, items: [строки] } — только если сайт уже на этой версии
+export async function latestRelease(env) {
+  const base = appUrl(env);
+  const t = Date.now();
+  const [cl, idx] = await Promise.all([
+    fetch(`${base}CHANGELOG.md?t=${t}`, { cf: { cacheTtl: 0 } }).then((r) => (r.ok ? r.text() : '')),
+    fetch(`${base}index.html?t=${t}`, { cf: { cacheTtl: 0 } }).then((r) => (r.ok ? r.text() : '')),
+  ]);
+  const m = /^##\s+(\d+\.\d+\.\d+)\s*$/m.exec(cl);
+  if (!m) return null;
+  const version = m[1];
+  if (!idx.includes(`?v=${version}`)) return null; // сайт ещё не обновился
+  const rest = cl.slice(m.index + m[0].length);
+  const end = rest.search(/^##\s/m);
+  const items = (end >= 0 ? rest.slice(0, end) : rest).split('\n').map((l) => l.trim()).filter((l) => /^[-*]\s+/.test(l)).map((l) => l.replace(/^[-*]\s+/, ''));
+  return { version, items };
+}
+
+export function releaseText({ version, items }) {
+  let text = `🆕 Книга кухни обновилась до версии ${version}\n\nЧто изменилось:\n${items.map((i) => '• ' + i).join('\n')}`;
+  text += '\n\nЕсли приложение было открыто — закройте его и откройте снова.';
+  return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT - 2) + '…' : text;
+}
+
 export default {
-  async fetch(req, env) {
+  async scheduled(event, env, ctx) {
+    if (!env.BOT_TOKEN) return;
+    ctx.waitUntil(registry(env).releaseTick());
+  },
+
+  async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
     if (url.pathname === '/' || url.pathname === '/health') {
@@ -102,6 +138,8 @@ export default {
       if (!allowed.includes(String(userId))) return json({ ok: false, error: 'forbidden' }, 403);
     }
     const stub = env.SCHEDULER.get(env.SCHEDULER.idFromName(String(userId)));
+    // Запоминаем, кому слать сообщения о новых версиях
+    ctx.waitUntil(registry(env).register(userId).catch(() => {}));
 
     if (url.pathname === '/api/reminders' && req.method === 'PUT') {
       let body;
@@ -143,6 +181,13 @@ export default {
       const r = await sendDocument(env, userId, file, String(fd.get('filename') || file.name || 'file'), fd.get('caption') || '');
       return json(r.ok ? { ok: true } : { ok: false, error: 'telegram', message: r.description || `Telegram ответил ${r.status}` }, r.ok ? 200 : 502);
     }
+    // Для проверки: прислать себе сообщение о текущей версии
+    if (url.pathname === '/api/release-preview' && req.method === 'POST') {
+      const rel = await latestRelease(env);
+      if (!rel) return json({ ok: false, error: 'no_release' }, 404);
+      const r = await sendMessage(env, userId, releaseText(rel), openButton(env));
+      return json(r.ok ? { ok: true, version: rel.version } : { ok: false, error: 'telegram', message: r.description }, r.ok ? 200 : 502);
+    }
     if (url.pathname === '/api/test' && req.method === 'POST') {
       const r = await sendMessage(env, userId, '✅ Бот-напоминальщик «Книги кухни» работает. Напоминания и таймеры будут приходить сюда.');
       return json(r.ok ? { ok: true } : { ok: false, error: 'telegram', message: r.description || `Telegram ответил ${r.status}. Нажмите /start в чате с ботом.` }, r.ok ? 200 : 502);
@@ -151,8 +196,38 @@ export default {
   },
 };
 
-// Будильник одного пользователя
+const openButton = (env) => ({ reply_markup: { inline_keyboard: [[{ text: '📖 Открыть Книгу кухни', web_app: { url: appUrl(env) } }]] } });
+
+// Будильник одного пользователя. Отдельный экземпляр «__registry» хранит список пользователей
+// и какую версию каждому уже отправили.
 export class Scheduler extends DurableObject {
+  async register(chatId) {
+    const users = (await this.ctx.storage.get('users')) || {};
+    if (String(chatId) in users) return { ok: true };
+    users[String(chatId)] = { since: Date.now(), sent: null };
+    await this.ctx.storage.put('users', users);
+    return { ok: true, new: true };
+  }
+
+  async releaseTick() {
+    const users = (await this.ctx.storage.get('users')) || {};
+    const ids = Object.keys(users);
+    if (!ids.length) return { ok: true, sent: 0 };
+    const rel = await latestRelease(this.env).catch(() => null);
+    if (!rel) return { ok: true, sent: 0 };
+    let sent = 0, changed = false;
+    for (const id of ids) {
+      if (users[id].sent === rel.version) continue;
+      try {
+        const r = await sendMessage(this.env, Number(id), releaseText(rel), openButton(this.env));
+        if (r.ok) { users[id].sent = rel.version; sent++; changed = true; }
+        else if (r.status === 403) { delete users[id]; changed = true; } // бот заблокирован
+      } catch (e) { /* сеть — попробуем через 5 минут */ }
+    }
+    if (changed) await this.ctx.storage.put('users', users);
+    return { ok: true, sent, version: rel.version };
+  }
+
   async setItems(chatId, items) {
     const now = Date.now();
     const future = items.filter((i) => i.at > now - 1000).sort((a, b) => a.at - b.at);

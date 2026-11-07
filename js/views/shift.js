@@ -137,7 +137,7 @@ function journalView(list) {
 function fillScreen(clId, iso) {
   return {
     tab: 'shift',
-    title: () => S.get('checklists', clId)?.name || 'Чек-лист',
+    title: 'Чек-лист',
     render() {
       const c = S.get('checklists', clId);
       if (!c) return emptyState('Чек-лист удалён', '');
@@ -145,18 +145,18 @@ function fillScreen(clId, iso) {
       const p = progress(c, iso);
       return html`
         <div class="card day-card">
-          <div class="day-head"><b>${fmtDayLong(isoToDate(iso))}</b><span class="muted">Отмечено ${p.done} из ${p.total}${p.no ? ` · ✕ ${p.no}` : ''}${c.time ? ` · к ${c.time}` : ''}</span></div>
+          <div class="day-head"><b>${c.name}</b><span class="muted">${fmtDayLong(isoToDate(iso))} · отмечено ${p.done} из ${p.total}${p.no ? ` · ✕ ${p.no}` : ''}${c.time ? ` · к ${c.time}` : ''}</span></div>
           <div class="ring-pct">${p.total ? Math.round((p.done / p.total) * 100) : 0}%</div>
         </div>
         ${(c.items || []).length ? html`<div class="card list-card">${c.items.map((it) => {
           const m = marks[it.id] || {};
           return html`<div class="crow2 ${m.v || ''}">
             <div class="c2-main"><div class="c2-text">${it.text}</div>
-              ${m.note ? html`<div class="c2-note">💬 ${m.note}</div>` : ''}
               ${m.at ? html`<div class="c2-at">${fmtClock(m.at)}${m.by ? ` · ${m.by}` : ''}</div>` : ''}</div>
             <button class="note-btn ${m.note ? 'on' : ''}" data-act="note" data-id="${it.id}" aria-label="Комментарий">💬</button>
             <button class="pr-x ${m.v === 'no' ? 'on' : ''}" data-act="no" data-id="${it.id}" aria-label="Нет">${icon('x')}</button>
             <button class="pr-check ${m.v === 'ok' ? 'on' : ''}" data-act="ok" data-id="${it.id}" aria-label="Да">${icon('check')}</button>
+            ${m.note ? html`<div class="c2-note wide">💬 ${m.note}</div>` : ''}
           </div>`;
         })}</div>` : html`<div class="empty small">В чек-листе нет пунктов</div>`}
         <button class="btn ghost wide" data-act="edit">${icon('edit')} Изменить пункты</button>`;

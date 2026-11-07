@@ -14,3 +14,7 @@ class_name = "Scheduler"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Scheduler"]
+
+# Раз в 5 минут — проверить, не вышла ли новая версия приложения (сообщение «что нового»)
+[triggers]
+crons = ["*/5 * * * *"]

@@ -556,7 +556,7 @@ body:not(.root) .fab { display: none; }
 .trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 0.5px solid var(--sep); }
 .trow:first-of-type { border-top: 0; }
 .t-main { flex: 1; min-width: 0; }
-.t-label { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-label { font-weight: 650; overflow-wrap: anywhere; }
 .t-sub { font-size: 13px; color: var(--hint); }
 .t-count { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--accent-text); }
 .trow.over .t-count { color: var(--ok-text); animation: pulse .8s infinite alternate; }
@@ -714,7 +714,7 @@ body:not(.root) .fab { display: none; }
 .jrow { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; padding-top: 6px; color: var(--hint); }
 .jrow b { color: var(--text); }
 .jrow b.ok { color: var(--ok-text); }
-.crow2 { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 0; border-bottom: 0.5px solid var(--sep); }
+.crow2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px 10px 0; border-bottom: 0.5px solid var(--sep); }
 .crow2:last-child { border-bottom: 0; }
 .c2-main { flex: 1; min-width: 0; }
 .c2-text { font-weight: 500; line-height: 1.3; }
@@ -757,3 +757,26 @@ body:not(.root) .fab { display: none; }
 .toolbar > .seg + * { margin-top: 10px; }
 #screen:has(div.empty .btn) .fab { display: none; }
 .chips.wrap .chip.on { background: linear-gradient(180deg, var(--accent), var(--accent2)); color: #fff; }
+/* 1.8.0 — узкие экраны (iPhone SE и т.п.) */
+.c2-note.wide { flex-basis: 100%; margin-top: 2px; }
+.seg button { white-space: nowrap; }
+@media (max-width: 389px) {
+  .toolbar .seg button { font-size: 13px; padding: 0 4px; }
+  [data-chips="plist"] { gap: 4px; }
+  [data-chips="plist"] .chip { font-size: 12px; padding: 9px 4px; }
+  [data-chips="plist"] .chip b { margin-left: 2px; }
+}
+/* Длинные слова переносятся, а не вылезают на соседние кнопки */
+body { overflow-wrap: break-word; }
+.c2-text, .pr-name, .rc-title, .b-name, .old-name, .ic-desc { overflow-wrap: anywhere; hyphens: auto; }
+@media (max-width: 389px) {
+  .idea-ing { grid-template-columns: 1fr 1fr 36px; grid-template-areas: "n n d" "q u ."; row-gap: 6px; padding-bottom: 8px; border-bottom: 0.5px solid var(--sep); }
+  .idea-ing [data-ii="name"] { grid-area: n; }
+  .idea-ing [data-ii="qty"] { grid-area: q; }
+  .idea-ing [data-ii="unit"] { grid-area: u; }
+  .idea-ing .icon-btn { grid-area: d; }
+}
+@media (max-width: 389px) {
+  .bottom-bar .btn { font-size: 15px; gap: 5px; padding-left: 8px; padding-right: 8px; }
+  .bottom-bar .btn svg { width: 18px; height: 18px; }
+}
