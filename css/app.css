@@ -742,7 +742,8 @@ body:not(.root) .fab { display: none; }
 .st-chips { margin: 0; }
 .st-chips .chip { flex: none; }
 .pr-carried { font-size: 13px; color: var(--warn-text, #b25f00); font-weight: 600; margin-top: 2px; }
-.tools-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin: 4px 0 14px; }
+.add-prep { margin: 4px 0 8px; }
+.tools-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin: 0 0 14px; }
 .tools-row .btn { min-width: 0; }
 .day-chips { display: flex; gap: 6px; margin-bottom: 8px; }
 .day-chip { flex: none; padding: 0 14px; white-space: nowrap; text-align: center; min-height: 44px; border-radius: 12px; background: var(--field); color: var(--hint); font-weight: 650; font-size: 14px; }

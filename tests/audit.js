@@ -201,7 +201,7 @@ async function seed(page) {
     await step('prep-more-menu', async () => { await page.click('[data-chips="plist"] [data-v="active"]').catch(() => {}); await W(); await page.click('[data-act="more-menu"]'); await W(); }, true);
     await step('prep-old', async () => { await page.click('.sheet .menu-item:has-text("Старые")'); await W(); await page.click('.old-main >> nth=0'); await W(); });
     await step('prep-old-other', async () => { await page.click('[data-act="back-other"]'); await W(); }, true);
-    await step('prep-form-once', async () => { await closeSheets(); await back(); await page.click('.fab'); await W(); });
+    await step('prep-form-once', async () => { await closeSheets(); await back(); await page.click('[data-act="add"]:visible'); await W(); });
     await step('prep-form-more', async () => { await page.click('[data-act="toggle-more"]'); await W(); });
     await step('prep-form-repeat', async () => { await seg('pmode', 'repeat'); });
     await step('prep-edit', async () => { await back(); await page.click('.prow .pr-name >> nth=0'); await W(); });

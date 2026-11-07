@@ -169,7 +169,8 @@ function dayView() {
     </div>`;
 }
 
-const toolsRow = () => html`<div class="tools-row">
+const toolsRow = () => html`<button class="btn primary wide add-prep" data-act="add">${icon('plus')} Добавить заготовку</button>
+<div class="tools-row">
   <button class="btn" data-act="timer-new">${icon('timer')} Таймер</button>
   <button class="btn" data-act="plan">${icon('send')} План</button>
   <button class="btn icon-only" data-act="more-menu" aria-label="Ещё">${icon('more')}</button>
@@ -180,6 +181,7 @@ function weekView() {
   if (!all.length) return emptyState('Повторяющихся заготовок нет', 'Здесь таблица норм по дням недели для заготовок с включённым «Повторять». Разовые заготовки — на «Сегодня» и «Завтра».', '', '↻');
   const today = weekdayIdx(new Date());
   return html`
+    <button class="btn primary wide add-prep" data-act="add">${icon('plus')} Добавить заготовку</button>
     <p class="hint pad-x">Нормы по дням недели. Меняйте прямо в таблице. Время «Сделать к» и напоминания — в карточке позиции (нажмите на название).</p>
     <div class="wtable-wrap"><table class="wtable">
       <thead><tr><th class="wname">Позиция</th>${WEEKDAYS.map((d, i) => html`<th class="${i === today ? 'today' : ''}">${d}</th>`)}</tr></thead>
@@ -335,7 +337,7 @@ export function prepScreen() {
         <div class="toolbar sticky">${segmented('mode', st.mode, [{ id: 'today', label: 'Сегодня' }, { id: 'tomorrow', label: 'Завтра' }, { id: 'week', label: 'Неделя' }, { id: 'exp', label: expLabel() }])}</div>
         ${!any ? html`${timersCard()}${emptyState('Заготовок пока нет', 'Добавьте заготовку на сегодня или на любой день. Постоянные можно сделать повторяющимися.', html`<div class="stack"><button class="btn primary" data-act="add">Добавить заготовку</button><button class="btn" data-act="timer-new">${icon('timer')} Таймер</button><button class="btn" data-act="plan">${icon('send')} План в Telegram</button></div>`, '🔪')}`
           : st.mode === 'week' ? weekView() : st.mode === 'exp' ? expView() : dayView()}
-        ${st.mode === 'exp' && any ? '' : fab()}`;
+        `;
     },
     mount(el) {
       // Живой обратный отсчёт таймеров
