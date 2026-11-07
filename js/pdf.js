@@ -24,7 +24,6 @@ function loadFonts() {
   return fontsP;
 }
 
-const waste = (b, n) => (b > 0 && n != null ? Math.round(((b - n) / b) * 1000) / 10 : null);
 function totals(ings, key, k) {
   const t = {};
   for (const i of ings || []) {
@@ -91,12 +90,12 @@ export async function recipePdf(r, { photos = [], factor = 1, scaledNote = '' } 
 
   // Ингредиенты
   heading('Ингредиенты');
-  const cw = [W - 81, 27, 27, 27];
-  const xs = [M, M + cw[0], M + cw[0] + cw[1], M + cw[0] + cw[1] + cw[2]];
+  const cw = [W - 60, 30, 30];
+  const xs = [M, M + cw[0], M + cw[0] + cw[1]];
   const rowLine = () => { doc.setDrawColor(225, 225, 230); doc.setLineWidth(0.2); doc.line(M, y, M + W, y); };
   font(9, true, [120, 120, 128]);
   ensure(8);
-  ['Продукт', 'Брутто', 'Нетто', 'Отход'].forEach((h, i) => doc.text(h, i ? xs[i] + cw[i] - 1 : xs[0], y + 4, i ? { align: 'right' } : undefined));
+  ['Продукт', 'Нетто', 'Отход'].forEach((h, i) => doc.text(h, i ? xs[i] + cw[i] - 1 : xs[0], y + 4, i ? { align: 'right' } : undefined));
   y += 6; rowLine();
   for (const i of r.ingredients || []) {
     font(10.5);
@@ -105,13 +104,13 @@ export async function recipePdf(r, { photos = [], factor = 1, scaledNote = '' } 
     ensure(h);
     lines.forEach((ln, j) => doc.text(ln, M, y + lh(10.5) * (j + 0.8) + 0.8));
     const u = i.unit || 'г';
-    const w = waste(i.brutto, i.netto);
-    [i.brutto != null ? `${n(i.brutto)} ${u}` : '—', i.netto != null ? `${n(i.netto)} ${u}` : '—', w == null ? '—' : `${fmtNum(w, 1)}%`]
+    const w = i.waste == null ? '—' : i.wasteMode === 'pct' ? `${fmtNum(i.waste, 1)}%` : `${n(i.waste)} ${u}`;
+    [i.netto != null ? `${n(i.netto)} ${u}` : '—', w]
       .forEach((v, c) => doc.text(v, xs[c + 1] + cw[c + 1] - 1, y + lh(10.5) * 0.8 + 0.8, { align: 'right' }));
     y += h; rowLine();
   }
   y += 2;
-  para(`Итого брутто: ${totals(r.ingredients, 'brutto', k)}   ·   нетто: ${totals(r.ingredients, 'netto', k)}`, { size: 10, b: true, gap: 1 });
+  para(`Итого нетто: ${totals(r.ingredients, 'netto', k)}`, { size: 10, b: true, gap: 1 });
   const yieldTxt = r.yieldAmount != null ? `${fmtNum(r.yieldAmount * k)} ${r.yieldUnit || 'г'}` : '—';
   para(`Выход: ${yieldTxt}   ·   Порций: ${r.portions ? fmtNum(r.portions * k) : '—'}`, { size: 10, gap: 2 });
 

@@ -10,26 +10,18 @@ import { icon, refSelect, bindRefSelects, fab, emptyState, segmented, busy, inNu
 import { botReady, sendFile } from '../reminders.js';
 
 // ---- Расчёты ----------------------------------------------------------------------------------
-export function wastePct(b, n) {
-  if (b == null || n == null || !(b > 0)) return null;
-  return Math.round(((b - n) / b) * 1000) / 10;
-}
-function wasteLabel(b, n) {
-  const w = wastePct(b, n);
-  if (w == null) return '—';
-  if (w < 0) return `+${fmtNum(-w, 1)}%`;
-  return `${fmtNum(w, 1)}%`;
+// Отход вводится вручную: в единицах продукта (wasteMode 'abs') или в процентах ('pct')
+export function wasteText(i, k = 1) {
+  if (i.waste == null) return '—';
+  return i.wasteMode === 'pct' ? `${fmtNum(i.waste, 1)}%` : `${fmtNum(i.waste * k)} ${i.unit || 'г'}`;
 }
 export function totals(ings, k = 1) {
   const t = {};
   for (const i of ings || []) {
-    for (const key of ['brutto', 'netto']) {
-      const v = i[key];
-      if (v == null) continue;
-      const b = toBase(v * k, i.unit || 'г');
-      t[b.fam] = t[b.fam] || { brutto: 0, netto: 0 };
-      t[b.fam][key] += b.v;
-    }
+    if (i.netto == null) continue;
+    const b = toBase(i.netto * k, i.unit || 'г');
+    t[b.fam] = t[b.fam] || { netto: 0 };
+    t[b.fam].netto += b.v;
   }
   return t;
 }
@@ -167,14 +159,13 @@ export function recipeDetail(id) {
   };
   const ingTable = (r, k) => html`
     <div class="itable">
-      <div class="irow head"><span>Продукт</span><span>Брутто</span><span>Нетто</span><span>Отход</span></div>
+      <div class="irow head"><span>Продукт</span><span>Нетто</span><span>Отход</span></div>
       ${(r.ingredients || []).map((i) => html`<div class="irow">
         <span class="iname">${i.name}</span>
-        <span>${amount(i.brutto != null ? i.brutto * k : null, i.unit)}</span>
         <span>${amount(i.netto != null ? i.netto * k : null, i.unit)}</span>
-        <span class="muted">${wasteLabel(i.brutto, i.netto)}</span></div>`)}
+        <span class="muted">${wasteText(i, k)}</span></div>`)}
     </div>
-    <div class="totals"><span>Итого брутто: <b>${totalsText(r.ingredients, 'brutto', k)}</b></span><span>нетто: <b>${totalsText(r.ingredients, 'netto', k)}</b></span></div>
+    <div class="totals"><span>Итого нетто: <b>${totalsText(r.ingredients, 'netto', k)}</b></span></div>
     <div class="kv">
       <div><span>Выход</span><b>${r.yieldAmount != null ? amount(r.yieldAmount * k, r.yieldUnit) : (k !== 1 ? `${totalsText(r.ingredients, 'netto', k)} (по нетто)` : '—')}</b></div>
       <div><span>Порций</span><b>${r.portions ? fmtNum(r.portions * k) : '—'}</b></div>
@@ -348,7 +339,7 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
   const lastSource = lsGet('kb_lastSource') || '';
   const draft = recipe ? clone(recipe) : { ...emptyRecipe(), sourceId: lastSource && (lastSource === S.OWN_SOURCE_ID || S.get('restaurants', lastSource)) ? lastSource : '' };
   draft.ingredients = (draft.ingredients || []).map((i) => ({ id: i.id || uid(), ...i }));
-  if (!draft.ingredients.length && mode === 'new') draft.ingredients.push({ id: uid(), name: '', brutto: null, netto: null, unit: 'г' });
+  if (!draft.ingredients.length && mode === 'new') draft.ingredients.push({ id: uid(), name: '', netto: null, unit: 'г', waste: null, wasteMode: 'abs' });
   draft.steps = draft.steps || [];
   draft.photos = draft.photos || [];
   const initial = JSON.stringify(draft);
@@ -362,10 +353,9 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
       <button class="icon-btn danger" data-act="del-ing" aria-label="Удалить">${icon('x')}</button>
     </div>
     <div class="ing-nums">
-      <label><small>Брутто</small><input class="inp" data-ing="brutto" inputmode="decimal" value="${inNum(i.brutto)}"></label>
       <label><small>Нетто</small><input class="inp" data-ing="netto" inputmode="decimal" value="${inNum(i.netto)}"></label>
       <label><small>Ед.</small><select class="inp" data-ing="unit">${UNITS.map((u) => html`<option ${u === (i.unit || 'г') ? 'selected' : ''}>${u}</option>`)}</select></label>
-      <label><small>Отход</small><span class="waste">${wasteLabel(i.brutto, i.netto)}</span></label>
+      <label><small>Отход</small><span class="waste-box"><input class="inp" data-ing="waste" inputmode="decimal" value="${inNum(i.waste)}" placeholder="—"><button type="button" class="waste-mode" data-act="waste-mode">${i.wasteMode === 'pct' ? '%' : i.unit || 'г'}</button></span></label>
     </div>
   </div>`;
 
@@ -388,8 +378,7 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
   </div>`;
 
   const totalsBlock = () => html`<div class="totals">
-    <span>Итого брутто: <b>${totalsText(draft.ingredients, 'brutto')}</b></span>
-    <span>нетто: <b>${totalsText(draft.ingredients, 'netto')}</b></span></div>`;
+    <span>Итого нетто: <b>${totalsText(draft.ingredients, 'netto')}</b></span></div>`;
 
   const screen = {
     tab: 'ttk',
@@ -450,8 +439,7 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
           const row = t.closest('.ing');
           const ing = draft.ingredients[+row.dataset.idx];
           const k = t.dataset.ing;
-          ing[k] = k === 'brutto' || k === 'netto' ? num(t.value) : t.value;
-          row.querySelector('.waste').textContent = wasteLabel(ing.brutto, ing.netto);
+          ing[k] = k === 'netto' || k === 'waste' ? num(t.value) : t.value;
           el.querySelector('#tot').innerHTML = String(totalsBlock());
           if (k === 'name') suggest(t, ing);
         } else if (t.hasAttribute('data-step')) {
@@ -463,6 +451,7 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
         if (t.dataset.ing === 'unit') {
           const row = t.closest('.ing');
           draft.ingredients[+row.dataset.idx].unit = t.value;
+          if (draft.ingredients[+row.dataset.idx].wasteMode !== 'pct') row.querySelector('.waste-mode').textContent = t.value;
           el.querySelector('#tot').innerHTML = String(totalsBlock());
         }
         if (t.dataset.f === 'yieldUnit') draft.yieldUnit = t.value;
@@ -475,14 +464,21 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
         if (focusSel) setTimeout(() => { const f = document.querySelector(focusSel); f?.focus(); f?.scrollIntoView({ block: 'center' }); }, 30);
       };
       onActs(el, {
+        'waste-mode': (t) => {
+          const row = t.closest('.ing');
+          const ing = draft.ingredients[+row.dataset.idx];
+          ing.wasteMode = ing.wasteMode === 'pct' ? 'abs' : 'pct';
+          t.textContent = ing.wasteMode === 'pct' ? '%' : ing.unit || 'г';
+          haptic('select');
+        },
         'add-ing': () => {
-          draft.ingredients.push({ id: uid(), name: '', brutto: null, netto: null, unit: draft.ingredients[draft.ingredients.length - 1]?.unit || 'г' });
+          draft.ingredients.push({ id: uid(), name: '', netto: null, unit: draft.ingredients[draft.ingredients.length - 1]?.unit || 'г', waste: null, wasteMode: 'abs' });
           rerender(`.ing[data-idx="${draft.ingredients.length - 1}"] [data-ing="name"]`);
         },
         'del-ing': async (t) => {
           const idx = +t.closest('.ing').dataset.idx;
           const ing = draft.ingredients[idx];
-          if ((ing.name || ing.brutto != null) && !(await confirmDialog(`Удалить «${ing.name || 'ингредиент'}»?`, 'Удалить', true))) return;
+          if ((ing.name || ing.netto != null) && !(await confirmDialog(`Удалить «${ing.name || 'ингредиент'}»?`, 'Удалить', true))) return;
           draft.ingredients.splice(idx, 1);
           rerender();
         },
@@ -543,13 +539,13 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
       input.value = b.dataset.v;
       ing.name = b.dataset.v;
       const p = S.findByName('products', ing.name);
-      if (p?.unit && !ing.brutto && !ing.netto) {
+      if (p?.unit && !ing.netto) {
         ing.unit = p.unit;
         const sel = input.closest('.ing').querySelector('[data-ing="unit"]');
         if (sel) sel.value = p.unit;
       }
       closeSuggest();
-      input.closest('.ing').querySelector('[data-ing="brutto"]').focus();
+      input.closest('.ing').querySelector('[data-ing="netto"]').focus();
     });
     input.closest('.ac-wrap').appendChild(sugEl);
   }
@@ -566,7 +562,7 @@ export function recipeForm({ mode, recipe, banner, onSaved, title }) {
       return;
     }
     draft.name = draft.name.trim();
-    draft.ingredients = draft.ingredients.filter((i) => (i.name || '').trim() || i.brutto != null || i.netto != null)
+    draft.ingredients = draft.ingredients.filter((i) => (i.name || '').trim() || i.netto != null)
       .map((i) => ({ ...i, name: (i.name || '').trim() }));
     draft.steps = draft.steps.map((s) => s.trim()).filter(Boolean);
     saved = true;
@@ -590,7 +586,7 @@ export function saveRecipe(d) {
     const categoryId = S.resolveRef('categories', d.categoryId);
     const sourceId = S.resolveRef('restaurants', d.sourceId);
     const ingredients = (d.ingredients || []).map((i) => ({
-      id: i.id || uid(), name: i.name, brutto: i.brutto ?? null, netto: i.netto ?? null, unit: i.unit || 'г',
+      id: i.id || uid(), name: i.name, netto: i.netto ?? null, unit: i.unit || 'г', waste: i.waste ?? null, wasteMode: i.wasteMode === 'pct' ? 'pct' : 'abs',
       productId: i.name ? S.ensureProduct(i.name, i.unit) : '',
     }));
     rec = S.put('recipes', {
@@ -715,11 +711,11 @@ const EXAMPLE_TTK = `=== ТТК ===
 Выход: 250 г
 Порций: 1
 Ингредиенты:
-- Филе куриное | 120 | 100 | г
-- Салат романо | 70 | 60 | г
-- Соус цезарь | 40 | 40 | г
-- Пармезан | 15 | 15 | г
-- Гренки | 20 | 20 | г
+- Филе куриное | 100 | г
+- Салат романо | 60 | г
+- Соус цезарь | 40 | г
+- Пармезан | 15 | г
+- Гренки | 20 | г
 Технология:
 1. Филе посолить, обжарить на гриле до готовности, нарезать слайсами.
 2. Романо порвать руками, заправить соусом.

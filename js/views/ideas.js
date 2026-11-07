@@ -1,11 +1,11 @@
 // Раздел «Идеи»
 
-import { html, uid, clone, plural, norm } from '../util.js';
+import { html, uid, clone, plural, norm, num, UNITS } from '../util.js';
 import * as S from '../store.js';
 import { push, back, replace, refresh, toast, confirmDialog, onActs, actionSheet, setTab } from '../ui.js';
 import { haptic } from '../tg.js';
 import { IDEA_STATUSES, statusLabel, parseIdeasText, CLAUDE_IDEAS_PROMPT, emptyRecipe } from '../textfmt.js';
-import { refSelect, bindRefSelects, fab, emptyState, chips, segmented, icon, catTag } from './common.js';
+import { refSelect, bindRefSelects, fab, emptyState, chips, icon, catTag } from './common.js';
 import { recipeForm, recipeDetail, pasteScreen, ttkState, ttkSwitch } from './ttk.js';
 
 const st = { status: '' };
@@ -60,9 +60,13 @@ export function ideasList() {
 // mode: обычная правка или 'draft' (в предпросмотре вставки)
 export function ideaForm({ idea, draftMode = false, onSaved }) {
   const isNew = !idea;
-  const d = idea ? clone(idea) : { title: '', description: '', categoryId: '', status: 'idea' };
+  const d = idea ? clone(idea) : { title: '', description: '', categoryId: '', status: 'idea', ingredients: [] };
+  d.ingredients = d.ingredients || [];
   const initial = JSON.stringify(d);
   let saved = false;
+  let ingOpen = false; // блок «Ингредиенты» изначально свёрнут
+  const ingSum = () => { const n = d.ingredients.filter((i) => i.name.trim()).length; return n ? `${n}` : 'не указаны'; };
+  const inNum = (v) => (v == null ? '' : String(v).replace('.', ','));
   return {
     tab: 'ttk',
     form: true,
@@ -75,7 +79,23 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
           <label class="fld"><span>Название</span><input class="inp" data-f="title" value="${d.title}" placeholder="Например, Тартар из свёклы с хреном"></label>
           <label class="fld"><span>Описание</span><textarea class="inp" data-f="description" rows="5" placeholder="Суть, вкусы, подача">${d.description}</textarea></label>
           <label class="fld"><span>Категория</span>${refSelect('categories', d.categoryId, { field: 'categoryId', addLabel: '＋ Новая категория…' })}</label>
-          <div class="fld"><span>Статус</span>${segmented('status', d.status, IDEA_STATUSES)}</div>
+          <div class="fld"><span>Статус</span><div class="chips wrap st-chips" data-chips="status">${IDEA_STATUSES.map((o) => html`<button class="chip ${o.id === d.status ? 'on' : ''}" data-act="status" data-v="${o.id}">${o.label}</button>`)}</div></div>
+        </div>
+        <div class="card">
+          <button class="collapse-head ${ingOpen ? 'open' : ''}" data-act="toggle-ings">
+            <span class="card-title">Ингредиенты</span>
+            <span class="ch-sum" id="ingSum">${ingSum()}</span>
+            <span class="chev">${icon('down')}</span>
+          </button>
+          <div class="collapse-body" ${ingOpen ? '' : 'hidden'}>
+            ${d.ingredients.map((i, idx) => html`<div class="idea-ing" data-idx="${idx}">
+              <input class="inp" data-ii="name" value="${i.name}" placeholder="Продукт">
+              <input class="inp" data-ii="qty" inputmode="decimal" value="${inNum(i.qty)}" placeholder="Кол-во">
+              <select class="inp" data-ii="unit">${UNITS.map((u) => html`<option ${u === (i.unit || 'г') ? 'selected' : ''}>${u}</option>`)}</select>
+              <button class="icon-btn danger" data-act="ing-del" aria-label="Убрать">${icon('x')}</button>
+            </div>`)}
+            <button class="btn ghost wide" data-act="ing-add">${icon('plus')} Ингредиент</button>
+          </div>
         </div>
         ${!isNew && !draftMode ? html`<div class="card stack">
           ${recipe ? html`<button class="btn" data-act="open-recipe">Открыть ТТК «${recipe.name}»</button>`
@@ -89,10 +109,21 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
       el.addEventListener('input', (e) => {
         const f = e.target.dataset.f;
         if (f === 'title' || f === 'description') d[f] = e.target.value;
+        const ii = e.target.dataset.ii;
+        if (ii) {
+          const ing = d.ingredients[+e.target.closest(".idea-ing").dataset.idx];
+          if (ii === 'name') { ing.name = e.target.value; el.querySelector('#ingSum').textContent = ingSum(); }
+          if (ii === 'qty') ing.qty = num(e.target.value);
+        }
       });
+      el.addEventListener('change', (e) => {
+        if (e.target.dataset.ii === 'unit') d.ingredients[+e.target.closest(".idea-ing").dataset.idx].unit = e.target.value;
+      });
+      const rer = (focusLast) => { refresh(); if (focusLast) setTimeout(() => { const all = document.querySelectorAll('[data-ii="name"]'); all[all.length - 1]?.focus(); }, 30); };
       const doSave = () => {
         if (!d.title.trim()) { toast('Введите название', 'error'); return null; }
         d.title = d.title.trim();
+        d.ingredients = d.ingredients.filter((i) => i.name.trim()).map((i) => ({ ...i, name: i.name.trim() }));
         saved = true;
         if (draftMode) { onSaved?.(d); return d; }
         let rec;
@@ -102,7 +133,10 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
         return rec;
       };
       onActs(el, {
-        seg: (t) => { d.status = t.dataset.v; el.querySelectorAll('[data-seg="status"] button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.status)); },
+        status: (t) => { d.status = t.dataset.v; el.querySelectorAll('[data-chips="status"] button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.status)); haptic('select'); },
+        'toggle-ings': (t) => { ingOpen = !ingOpen; t.classList.toggle('open', ingOpen); t.nextElementSibling.hidden = !ingOpen; },
+        'ing-add': () => { d.ingredients.push({ id: uid(), name: '', qty: null, unit: 'г' }); ingOpen = true; rer(true); },
+        'ing-del': (t) => { d.ingredients.splice(+t.closest(".idea-ing").dataset.idx, 1); rer(); },
         save: () => {
           const rec = doSave();
           if (!rec) return;
@@ -116,6 +150,9 @@ export function ideaForm({ idea, draftMode = false, onSaved }) {
           const rec = doSave();
           if (!rec) return;
           const r = { ...emptyRecipe(), name: rec.title, categoryId: rec.categoryId, notes: rec.description };
+          if ((rec.ingredients || []).length) {
+            r.ingredients = rec.ingredients.map((i) => ({ id: uid(), name: i.name, netto: i.qty ?? null, unit: i.unit || 'г', waste: null, wasteMode: 'abs' }));
+          }
           replace(recipeForm({
             mode: 'new',
             recipe: r,

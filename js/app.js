@@ -15,6 +15,7 @@ import { settingsScreen } from './views/settings.js';
 import { stockScreen } from './views/inventory.js';
 import { initReminders, onRemState } from './reminders.js';
 import './batches.js';
+import { wipeLegacyPrep, cleanupOldOnce } from './prepcore.js';
 
 function syncDot() {
   const el = document.getElementById('syncDot');
@@ -32,6 +33,7 @@ async function main() {
   initTelegram();
   applyTheme();
   await S.loadLocal();
+  try { wipeLegacyPrep(); cleanupOldOnce(); } catch (e) { console.error(e); }
   registerTab('ttk', () => (ttkState.view === 'ideas' ? ideasList() : recipesList()));
   registerTab('prep', prepScreen);
   registerTab('stock', stockScreen);
@@ -47,6 +49,7 @@ async function main() {
 
   // Пришли данные из облака / восстановили копию — перерисовать, если не в форме
   S.onChange((src) => {
+    if (src === 'remote') { try { wipeLegacyPrep(); } catch (e) { console.error(e); } }
     if (['remote', 'import', 'wipe'].includes(src) && !top()?.form) refresh();
   });
   const typing = () => document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);

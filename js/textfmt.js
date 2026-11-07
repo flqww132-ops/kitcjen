@@ -70,18 +70,30 @@ function fieldOf(line, fields) {
 export function parseIngredientLine(line) {
   let s = line.replace(/^\s*(?:[-–—•*·]|\d+[.)])\s*/, '').trim();
   if (!s) return null;
+  const blank = (name) => ({ name, netto: null, unit: 'г', waste: null, wasteMode: 'abs' });
   if (s.includes('|')) {
     const p = s.split('|').map((x) => x.trim());
-    if (/брутто|нетто/i.test(p.slice(1).join(' ')) && num(p[1]) == null) return null; // строка-шапка
+    if (/брутто|нетто|продукт/i.test(p.slice(1).join(' ')) && num(p[1]) == null) return null; // строка-шапка
     const name = p[0];
     if (!name) return null;
-    const unit = normUnit(p[3] || '') || normUnit((p[1] || '').replace(/[\d.,\s]/g, '')) || normUnit((p[2] || '').replace(/[\d.,\s]/g, ''));
-    return { name, brutto: num(p[1]), netto: num(p[2]), unit: unit || 'г' };
+    const out = blank(name);
+    if (normUnit(p[2] || '')) {
+      // Формат: продукт | нетто | ед. | отход
+      out.netto = num(p[1]);
+      out.unit = normUnit(p[2]);
+      const w = (p[3] || '').trim();
+      if (w && num(w) != null) { out.waste = num(w); out.wasteMode = /%/.test(w) ? 'pct' : 'abs'; }
+    } else {
+      // Старый формат: продукт | брутто | нетто | ед. — брутто не берём
+      out.netto = p.length >= 3 ? num(p[2]) : num(p[1]);
+      out.unit = normUnit(p[3] || '') || normUnit((p[2] || p[1] || '').replace(/[\d.,\s]/g, '')) || 'г';
+    }
+    return out;
   }
-  // Запасной вариант: «Свёкла — 200/160 г» или «Свёкла 200 г»
+  // Запасной вариант: «Свёкла — 160 г» (или «200/160 г» — берём нетто)
   const m = s.match(/^(.*?)[\s:—–-]+(\d[\d\s.,]*)\s*(?:\/\s*(\d[\d\s.,]*))?\s*(кг|г|гр|мл|л|шт)\.?$/i);
-  if (m) return { name: m[1].trim(), brutto: num(m[2]), netto: m[3] != null ? num(m[3]) : num(m[2]), unit: normUnit(m[4]) };
-  return { name: s, brutto: null, netto: null, unit: 'г' };
+  if (m) return { ...blank(m[1].trim()), netto: m[3] != null ? num(m[3]) : num(m[2]), unit: normUnit(m[4]) };
+  return blank(s);
 }
 
 export function parseYield(s) {
@@ -181,8 +193,11 @@ export function recipeToText(r, { factor = 1, scaledNote = '' } = {}) {
   if (scaledNote) L.push('Пересчёт: ' + scaledNote);
   L.push('Выход: ' + (r.yieldAmount != null ? `${n(r.yieldAmount)} ${r.yieldUnit || 'г'}` : ''));
   L.push('Порций: ' + (r.portions != null ? fmtNum(r.portions * k).replace(/\s/g, '') : ''));
-  L.push('Ингредиенты (продукт | брутто | нетто | ед.):');
-  for (const i of r.ingredients || []) L.push(`- ${i.name} | ${n(i.brutto)} | ${n(i.netto)} | ${i.unit || 'г'}`);
+  L.push('Ингредиенты (продукт | нетто | ед. | отход):');
+  for (const i of r.ingredients || []) {
+    const w = i.waste == null ? '' : i.wasteMode === 'pct' ? `${fmtNum(i.waste, 1)}%` : `${n(i.waste)} ${i.unit || 'г'}`;
+    L.push(`- ${i.name} | ${n(i.netto)} | ${i.unit || 'г'}${w ? ` | ${w}` : ''}`);
+  }
   L.push('Технология:');
   (r.steps || []).forEach((s, idx) => L.push(`${idx + 1}. ${s}`));
   L.push('Подача: ' + (r.serving || ''));
@@ -233,7 +248,7 @@ export const CLAUDE_TTK_PROMPT = `Я пришлю фото технико-тех
 Выход: <число и единица, например 250 г>
 Порций: <число>
 Ингредиенты:
-- <продукт> | <брутто> | <нетто> | <ед.>
+- <продукт> | <нетто> | <ед.>
 Технология:
 1. <шаг>
 2. <шаг>
@@ -243,9 +258,9 @@ export const CLAUDE_TTK_PROMPT = `Я пришлю фото технико-тех
 === КОНЕЦ ===
 
 Правила:
-1. Каждый ингредиент — отдельная строка: продукт | брутто | нетто | единица (г, кг, мл, л или шт).
+1. Каждый ингредиент — отдельная строка: продукт | нетто | единица (г, кг, мл, л или шт). Брутто не пиши — только нетто.
 2. Числа пиши как на карте, десятичные — через запятую (0,150). Единицу бери из шапки таблицы (г или кг) — не переводи.
-3. Если брутто или нетто нет на карте — оставь место пустым: - Соль | | 3 | г
+3. Если нетто нет на карте — оставь место пустым: - Соль | | г
 4. Строки «Итого» и «Выход» из таблицы в ингредиенты не пиши — выход укажи в поле «Выход».
 5. Если на карте есть расход на 1 порцию и на 10 порций — бери на 1 порцию и пиши «Порций: 1».
 6. Ничего не придумывай: если что-то не видно или не указано — оставь поле пустым. Неразборчивое слово пометь знаком (?).

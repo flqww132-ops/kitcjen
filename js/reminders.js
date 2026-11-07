@@ -4,7 +4,7 @@
 import * as S from './store.js';
 import { W, inTelegram } from './tg.js';
 import { addDays, dateISO, weekdayIdx, fmtDayLong, fmtNum, fmtDuration, hash, debounce, lsGet, lsSet, fmtClock } from './util.js';
-import { getLog, timeOf, toMake, deadlineOf, sortItems, neededOn } from './prepcore.js';
+import { logFor, timeOf, toMake, deadlineOf, dayItems } from './prepcore.js';
 import { planSchedule } from './plan.js';
 
 const HORIZON_DAYS = 14;
@@ -21,16 +21,16 @@ export function setBotUrl(url) {
 // Все будущие сообщения: напоминания о заготовках на 14 дней вперёд + таймеры
 export function buildSchedule(now = Date.now()) {
   const out = [];
-  const items = sortItems(S.list('prepItems'));
   const stName = (id) => S.nameOf('stations', id);
   const groups = new Map();
+  const todayIso = dateISO(new Date(now));
   for (let d = 0; d < HORIZON_DAYS; d++) {
     const date = addDays(new Date(now), d);
     const iso = dateISO(date);
     const wd = weekdayIdx(date);
-    for (const it of items) {
-      if (!neededOn(it, wd) || !(it.reminders || []).length) continue;
-      const log = getLog(iso, it.id);
+    for (const { it, carried } of dayItems(iso, todayIso)) {
+      if (carried || !(it.reminders || []).length) continue;
+      const log = logFor(it, iso);
       if (log.done || log.closed) continue;
       const time = timeOf(it, wd, log);
       const deadline = deadlineOf(date, time);

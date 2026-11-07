@@ -291,12 +291,12 @@ function extractIngredients(rows, h) {
       continue;
     }
     const unit = normUnit(u) || normUnit(String(b).replace(/[\d.,\s]/g, '')) || h.unitHdr || '';
-    out.push({ id: uid(), name: name.trim(), brutto: bn, netto: nn, unit });
+    out.push({ id: uid(), name: name.trim(), netto: nn ?? bn, unit, waste: null, wasteMode: 'abs' });
     last = r;
   }
   let unitGuessed = false;
   if (out.some((i) => !i.unit)) {
-    const g = guessUnit(out.flatMap((i) => [i.brutto, i.netto]));
+    const g = guessUnit(out.map((i) => i.netto));
     out.forEach((i) => { if (!i.unit) i.unit = g.unit; });
     unitGuessed = true;
   }

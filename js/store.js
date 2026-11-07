@@ -8,8 +8,8 @@ import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
 import { uid, hash, norm, debounce, clone, num } from './util.js';
 
-export const SCHEMA_VERSION = 6;
-export const APP_VERSION = '1.6.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const SCHEMA_VERSION = 7;
+export const APP_VERSION = '1.7.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -108,6 +108,23 @@ const MIGRATIONS = {
   // 5 → 6: чек-листы смены и журнал
   5: (doc) => {
     for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
+    return doc;
+  },
+  // 6 → 7: брутто убрано — у ингредиентов ТТК только нетто и отход (вводится вручную); у идей — ингредиенты
+  6: (doc) => {
+    for (const k of COLLECTIONS) doc.c[k] = doc.c[k] || {};
+    for (const r of Object.values(doc.c.recipes)) {
+      if (r.deleted) continue;
+      for (const i of r.ingredients || []) {
+        delete i.brutto;
+        if (i.waste === undefined) i.waste = null;
+        if (!i.wasteMode) i.wasteMode = 'abs';
+      }
+    }
+    for (const r of Object.values(doc.c.ideas)) {
+      if (r.deleted) continue;
+      if (!Array.isArray(r.ingredients)) r.ingredients = [];
+    }
     return doc;
   },
   0: (doc) => {
