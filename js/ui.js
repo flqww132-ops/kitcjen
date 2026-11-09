@@ -14,6 +14,7 @@ let currentTab = 'ttk';
 export function registerTab(tab, factory) { roots[tab] = factory; }
 export const top = () => stack[stack.length - 1];
 export const getTab = () => currentTab;
+export const depth = () => stack.length;
 
 export function setTab(tab) {
   if (stack.length && top().form) {

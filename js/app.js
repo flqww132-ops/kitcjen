@@ -15,6 +15,7 @@ import { settingsScreen } from './views/settings.js';
 import { stockScreen } from './views/inventory.js';
 import { initReminders, onRemState } from './reminders.js';
 import './batches.js';
+import { initSwipeBack } from './swipe.js';
 import { wipeLegacyPrep, cleanupOldOnce } from './prepcore.js';
 
 function syncDot() {
@@ -40,6 +41,7 @@ async function main() {
   registerTab('shift', shiftScreen);
   registerTab('settings', settingsScreen);
   initNav();
+  initSwipeBack();
   let startTab = 'ttk';
   try { startTab = localStorage.getItem('kb_tab') || 'ttk'; } catch (e) { /* нет */ }
   setTab(['ttk', 'prep', 'stock', 'shift', 'settings'].includes(startTab) ? startTab : (startTab === 'equip' ? 'stock' : 'ttk'));

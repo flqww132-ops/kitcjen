@@ -781,3 +781,8 @@ body { overflow-wrap: break-word; }
   .bottom-bar .btn { font-size: 15px; gap: 5px; padding-left: 8px; padding-right: 8px; }
   .bottom-bar .btn svg { width: 18px; height: 18px; }
 }
+/* Свайп назад */
+body.swiping { overflow-x: hidden; }
+body.swiping #screen > * { will-change: transform; }
+#screen.swipe-in > * { animation: swipeIn .24s cubic-bezier(.2,.8,.2,1); }
+@keyframes swipeIn { from { transform: translateX(-22%); opacity: .5; } to { transform: none; opacity: 1; } }
