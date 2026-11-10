@@ -10,7 +10,7 @@ import { uid, hash, norm, debounce, clone, num } from './util.js';
 import { loggedIn, authHeaders, clearSession, DEFAULT_BOT } from './auth.js';
 
 export const SCHEMA_VERSION = 7;
-export const APP_VERSION = '2.0.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const APP_VERSION = '2.0.1'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -377,6 +377,7 @@ async function syncTelegram() {
     }
   }
   applyDoc(base, 'remote');
+  await kvSet('doc', doc);
   const text = serialize(doc);
   const dh = hash(text);
   if (!man || man.dh !== dh) cloudManifest = await writeCloud(text, man, { dh, dev: meta.deviceId });
@@ -427,6 +428,8 @@ async function syncServer() {
     base = mergeDocs(base, m);
   }
   applyDoc(base, 'remote');
+  // Сначала данные на устройство, потом отметка «получено до rev» — иначе при закрытии приложения данные потеряются
+  await kvSet('doc', doc);
   meta.srvRev = since;
   meta.srvPushAt = Math.max(maxU, meta.srvPushAt || 0);
   meta.srvFull = false;
@@ -464,7 +467,7 @@ export async function syncNow() {
       meta.lastSync = Date.now();
       sync.lastSync = meta.lastSync;
     }
-    saveMeta();
+    await kvSet('meta', meta).catch(() => {});
     const bad = errors[0];
     if (!bad) { sync.state = 'ok'; sync.error = ''; }
     else if (okAny && bad.code === 'TOO_BIG') { sync.state = 'ok'; sync.error = ''; }
@@ -490,7 +493,9 @@ export function initSync() {
   setInterval(() => { if (document.visibilityState === 'visible' && loggedIn()) syncNow(); }, 30000);
 }
 // После входа на новом устройстве — забрать всё из облака и отправить своё
-export function resetServerSync() { meta.srvRev = 0; meta.srvPushAt = 0; meta.srvFull = true; saveMeta(); }
+export async function resetServerSync() { meta.srvRev = 0; meta.srvPushAt = 0; meta.srvFull = true; await kvSet('meta', meta); }
+// Записать всё на устройство прямо сейчас (перед перезагрузкой)
+export async function saveNow() { await kvSet('doc', doc); await kvSet('meta', meta); }
 
 // ---- Резервная копия / восстановление / очистка ---------------------------------
 export function exportDoc() { return JSON.parse(serialize(doc)); }

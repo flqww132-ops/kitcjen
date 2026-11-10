@@ -42,9 +42,10 @@ export function showLoginScreen({ first = false } = {}) {
         const j = await r.json().catch(() => ({}));
         if (!j.ok) throw new Error(j.message || 'Не получилось войти');
         setSession({ token: j.token, name: j.name || '', userId: j.userId, at: Date.now() });
-        S.resetServerSync();
+        await S.resetServerSync();
         go.textContent = 'Загружаю данные…';
         await S.syncNow();
+        await S.saveNow();
         close(true);
         location.reload();
       } catch (e) {
