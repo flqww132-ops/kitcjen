@@ -9,7 +9,7 @@ import { refSelect, bindRefSelects, fab, emptyState, segmented, chips, icon, inN
 import { recipeDetail } from './ttk.js';
 import { planScreen } from './planview.js';
 import { activeBatches, groupBatches, relLeft, fmtDT, expirySettings, saveExpirySettings } from '../batches.js';
-import { W } from '../tg.js';
+import { myName, loggedIn } from '../auth.js';
 import { getLog, normOf, timeOf, toMake, deadlineOf, putLog, sortItems, grouped, neededOn, statusOf, byTime, prepText, isOnce, logDateOf, logFor, dayItems, carriedLabel, dayMonth, oldOnceItems } from '../prepcore.js';
 export { prepText };
 import { botUrl } from '../reminders.js';
@@ -65,7 +65,7 @@ async function startTimer(defaultLabel = '', itemId = '') {
   const now = Date.now();
   S.put('timers', { id: uid(), label: r.label || defaultLabel || 'Таймер', durationSec: r.sec, endsAt: now + r.sec * 1000, itemId });
   haptic('success');
-  toast(botUrl() && inTelegram ? `Таймер на ${fmtDuration(r.sec)} — бот напишет в Telegram` : `Таймер на ${fmtDuration(r.sec)} запущен`);
+  toast(botUrl() && loggedIn() ? `Таймер на ${fmtDuration(r.sec)} — бот напишет в Telegram` : `Таймер на ${fmtDuration(r.sec)} запущен`);
   refresh();
 }
 
@@ -212,7 +212,7 @@ async function markFlow(it) {
   const wd = weekdayIdx(dayDate());
   const log = logFor(it, iso);
   const qty0 = toMake(it, wd, log) || normOf(it, wd);
-  const who0 = lsGet('kb_who') || W?.initDataUnsafe?.user?.first_name || '';
+  const who0 = lsGet('kb_who') || myName();
   const sh = shelfSplit(it.shelfH);
   const r = await sheet({
     title: `Маркировка: ${it.name}`,

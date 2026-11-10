@@ -7,9 +7,10 @@
 import { kvGet, kvSet } from './idb.js';
 import { cloudAvailable, readManifest, readCloud, writeCloud, cloudUsage } from './cloud.js';
 import { uid, hash, norm, debounce, clone, num } from './util.js';
+import { loggedIn, authHeaders, clearSession, DEFAULT_BOT } from './auth.js';
 
 export const SCHEMA_VERSION = 7;
-export const APP_VERSION = '1.9.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const APP_VERSION = '2.0.0'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
@@ -201,7 +202,7 @@ function compact(doc) {
 
 // ---- Хранилище в памяти -------------------------------------------------------------
 let doc = emptyDoc();
-let meta = { deviceId: '', cloudDh: '', lastSync: 0 };
+let meta = { deviceId: '', cloudDh: '', lastSync: 0, srvRev: 0, srvPushAt: 0, srvFull: false };
 const listeners = new Set();
 
 export const onChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -302,9 +303,12 @@ export function productNames() {
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
-// ---- Синхронизация с облаком Telegram ------------------------------------------
+// ---- Синхронизация ----------------------------------------------------------------
+// Два облака: облако Telegram (только внутри Telegram, запасная копия) и облако бота (везде, где выполнен вход).
 export const sync = {
-  mode: 'local',   // 'cloud' | 'local'
+  mode: 'local',   // 'cloud' (есть облако) | 'local' (только устройство)
+  tg: false,       // облако Telegram доступно
+  srv: false,      // облако бота доступно (выполнен вход)
   state: 'idle',   // idle | syncing | ok | error | newer | toobig
   error: '',
   lastSync: 0,
@@ -315,12 +319,124 @@ const syncListeners = new Set();
 export const onSync = (fn) => { syncListeners.add(fn); return () => syncListeners.delete(fn); };
 const emitSync = () => syncListeners.forEach((fn) => fn(sync));
 
+// Облако бота: адрес и запросы
+export const serverUrl = () => (get('settings', 'botUrl')?.value || DEFAULT_BOT).replace(/\/+$/, '');
+const srvListeners = { photos: new Set(), logout: new Set() };
+export const onServerPhotos = (fn) => srvListeners.photos.add(fn);
+export const onLoggedOut = (fn) => srvListeners.logout.add(fn);
+export async function srvFetch(path, opts = {}) {
+  const r = await fetch(serverUrl() + path, { ...opts, headers: { ...(opts.headers || {}), ...authHeaders() } });
+  if (r.status === 401) {
+    let j = null;
+    try { j = await r.clone().json(); } catch (e) { /* нет */ }
+    if (j?.error === 'logged_out') { clearSession(); srvListeners.logout.forEach((fn) => fn()); }
+  }
+  return r;
+}
+async function srvJson(path, body) {
+  const r = await srvFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let j = null;
+  try { j = await r.json(); } catch (e) { /* нет */ }
+  if (!r.ok || !j?.ok) { const e = new Error(j?.message || j?.error || `облако ответило ${r.status}`); e.code = j?.error; throw e; }
+  return j;
+}
+
 let syncing = false, again = false, cloudManifest = null;
+const extraPush = new Map(); // записи, пришедшие из облака Telegram, — отправить и в облако бота
 const scheduleSync = debounce(() => syncNow(), 1500);
 export const flushSync = () => scheduleSync.flush();
 
+function applyDoc(base, src) {
+  if (base === doc) return false;
+  const before = serialize(doc);
+  doc = base;
+  compact(doc);
+  if (serialize(doc) === before) return false;
+  saveLocal();
+  emit(src);
+  return true;
+}
+
+async function syncTelegram() {
+  const man = await readManifest();
+  let base = doc;
+  if (man && man.dh !== meta.cloudDh) {
+    // В облаке что-то новее того, что мы видели — подтягиваем и сливаем
+    const remote = await readCloud(man);
+    if (remote) {
+      sync.recovered = remote.recovered;
+      const rdoc = migrate(JSON.parse(remote.text));
+      if (rdoc.__newer) { doc.__newer = true; return; }
+      for (const k of COLLECTIONS) {
+        for (const [id, r] of Object.entries(rdoc.c[k] || {})) {
+          const cur = doc.c[k][id];
+          if (!cur || (r.updatedAt || 0) > (cur.updatedAt || 0)) extraPush.set(k + '\u0000' + id, k);
+        }
+      }
+      base = mergeDocs(doc, rdoc);
+    }
+  }
+  applyDoc(base, 'remote');
+  const text = serialize(doc);
+  const dh = hash(text);
+  if (!man || man.dh !== dh) cloudManifest = await writeCloud(text, man, { dh, dev: meta.deviceId });
+  else cloudManifest = man;
+  meta.cloudDh = dh;
+  try { sync.usage = await cloudUsage(); } catch (e) { /* нет */ }
+}
+
+async function syncServer() {
+  const full = !meta.srvRev || meta.srvFull;
+  const mark = meta.srvPushAt || 0;
+  const changes = [];
+  let maxU = mark;
+  for (const k of COLLECTIONS) {
+    for (const [id, r] of Object.entries(doc.c[k])) {
+      if (full || (r.updatedAt || 0) > mark || extraPush.has(k + '\u0000' + id)) {
+        changes.push({ c: k, r });
+        if ((r.updatedAt || 0) > maxU) maxU = r.updatedAt;
+      }
+    }
+  }
+  extraPush.clear();
+  let since = meta.srvRev || 0, first = true, more = false, photos = null;
+  const incoming = [];
+  do {
+    const res = await srvJson('/api/sync', { since, schema: SCHEMA_VERSION, changes: first ? changes : [] });
+    first = false;
+    incoming.push(...(res.changes || []));
+    since = res.rev; more = !!res.more; photos = res.photos || [];
+  } while (more);
+  // Применяем пришедшее: по версии схемы — через миграции
+  const bySchema = new Map();
+  for (const ch of incoming) {
+    if (!COLLECTIONS.includes(ch.c) || !ch.r?.id) continue;
+    const s = Number(ch.s) || SCHEMA_VERSION;
+    if (!bySchema.has(s)) bySchema.set(s, { schema: s, c: {} });
+    const d = bySchema.get(s);
+    (d.c[ch.c] = d.c[ch.c] || {})[ch.r.id] = ch.r;
+  }
+  let base = doc;
+  for (const part of bySchema.values()) {
+    if (part.schema > SCHEMA_VERSION) { doc.__newer = true; return; }
+    const m = migrate(part);
+    for (const k of COLLECTIONS) {
+      // начальные списки из миграций не тащим — только то, что реально пришло
+      for (const id of Object.keys(m.c[k])) if (!part.c[k]?.[id]) delete m.c[k][id];
+    }
+    base = mergeDocs(base, m);
+  }
+  applyDoc(base, 'remote');
+  meta.srvRev = since;
+  meta.srvPushAt = Math.max(maxU, meta.srvPushAt || 0);
+  meta.srvFull = false;
+  srvListeners.photos.forEach((fn) => { try { fn(photos); } catch (e) { console.error(e); } });
+}
+
 export async function syncNow() {
-  if (!cloudAvailable()) {
+  sync.tg = cloudAvailable();
+  sync.srv = loggedIn();
+  if (!sync.tg && !sync.srv) {
     sync.mode = 'local';
     sync.state = 'idle';
     emitSync();
@@ -332,41 +448,27 @@ export async function syncNow() {
   syncing = true;
   sync.state = 'syncing';
   emitSync();
+  const errors = [];
   try {
-    const man = await readManifest();
-    let base = doc;
-    if (man && man.dh !== meta.cloudDh) {
-      // В облаке что-то новее того, что мы видели — подтягиваем и сливаем
-      const remote = await readCloud(man);
-      if (remote) {
-        sync.recovered = remote.recovered;
-        const rdoc = migrate(JSON.parse(remote.text));
-        if (rdoc.__newer) { doc.__newer = true; sync.state = 'newer'; return; }
-        base = mergeDocs(doc, rdoc);
-      }
+    if (sync.tg) {
+      try { await syncTelegram(); } catch (e) { console.error('sync tg', e); errors.push(e); }
     }
-    if (base !== doc) {
-      const before = serialize(doc);
-      doc = base;
-      compact(doc);
-      if (serialize(doc) !== before) { saveLocal(); emit('remote'); }
+    if (doc.__newer) { sync.state = 'newer'; return; }
+    if (sync.srv) {
+      try { await syncServer(); } catch (e) { console.error('sync srv', e); errors.push(e); }
     }
-    const text = serialize(doc);
-    const dh = hash(text);
-    if (!man || man.dh !== dh) {
-      cloudManifest = await writeCloud(text, man, { dh, dev: meta.deviceId });
-    } else cloudManifest = man;
-    meta.cloudDh = dh;
-    meta.lastSync = Date.now();
+    if (doc.__newer) { sync.state = 'newer'; return; }
+    // Хватает одного облака: ошибка второго — не повод пугать
+    const okAny = errors.length < (sync.tg ? 1 : 0) + (sync.srv ? 1 : 0);
+    if (okAny) {
+      meta.lastSync = Date.now();
+      sync.lastSync = meta.lastSync;
+    }
     saveMeta();
-    sync.lastSync = meta.lastSync;
-    sync.state = 'ok';
-    sync.error = '';
-    try { sync.usage = await cloudUsage(); } catch (e) { /* нет */ }
-  } catch (e) {
-    console.error('sync', e);
-    sync.state = e.code === 'TOO_BIG' ? 'toobig' : 'error';
-    sync.error = String(e.message || e);
+    const bad = errors[0];
+    if (!bad) { sync.state = 'ok'; sync.error = ''; }
+    else if (okAny && bad.code === 'TOO_BIG') { sync.state = 'ok'; sync.error = ''; }
+    else { sync.state = bad.code === 'TOO_BIG' ? 'toobig' : 'error'; sync.error = String(bad.message || bad); }
   } finally {
     syncing = false;
     emitSync();
@@ -376,13 +478,19 @@ export async function syncNow() {
 
 export function initSync() {
   sync.lastSync = meta.lastSync || 0;
-  sync.mode = cloudAvailable() ? 'cloud' : 'local';
+  sync.tg = cloudAvailable();
+  sync.srv = loggedIn();
+  sync.mode = sync.tg || sync.srv ? 'cloud' : 'local';
   syncNow();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') syncNow();
     else { saveLocal.flush(); scheduleSync.flush(); }
   });
+  // Облако бота: подтягивать изменения с других устройств, пока приложение открыто
+  setInterval(() => { if (document.visibilityState === 'visible' && loggedIn()) syncNow(); }, 30000);
 }
+// После входа на новом устройстве — забрать всё из облака и отправить своё
+export function resetServerSync() { meta.srvRev = 0; meta.srvPushAt = 0; meta.srvFull = true; saveMeta(); }
 
 // ---- Резервная копия / восстановление / очистка ---------------------------------
 export function exportDoc() { return JSON.parse(serialize(doc)); }
@@ -405,6 +513,7 @@ export function importDoc(incoming, mode) {
     doc = migrate(next);
   } else {
     doc = mergeDocs(doc, inc);
+    meta.srvFull = true; saveMeta(); // старые записи из копии — тоже в облако бота
   }
   changed('import');
 }

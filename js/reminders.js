@@ -2,7 +2,7 @@
 // Бот (папка bot/, Cloudflare Workers) в нужную секунду пишет в чат Telegram.
 
 import * as S from './store.js';
-import { W, inTelegram } from './tg.js';
+import { loggedIn, authHeaders, DEFAULT_BOT } from './auth.js';
 import { addDays, dateISO, weekdayIdx, fmtDayLong, fmtNum, fmtDuration, hash, debounce, lsGet, lsSet, fmtClock } from './util.js';
 import { logFor, timeOf, toMake, deadlineOf, dayItems } from './prepcore.js';
 import { planSchedule } from './plan.js';
@@ -13,7 +13,8 @@ const listeners = new Set();
 export const onRemState = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 const emit = () => listeners.forEach((fn) => fn(remState));
 
-export const botUrl = () => (S.get('settings', 'botUrl')?.value || '').replace(/\/+$/, '');
+// Адрес бота: свой из настроек или наш по умолчанию
+export const botUrl = () => (S.get('settings', 'botUrl')?.value || DEFAULT_BOT).replace(/\/+$/, '');
 export function setBotUrl(url) {
   S.put('settings', { id: 'botUrl', value: String(url || '').trim().replace(/\/+$/, '') });
 }
@@ -64,7 +65,7 @@ export function buildSchedule(now = Date.now()) {
 async function api(path, method, body) {
   const r = await fetch(botUrl() + path, {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-Init-Data': W?.initData || '' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   });
   let j = null;
@@ -77,10 +78,10 @@ async function api(path, method, body) {
 const extraSchedules = [];
 export const registerSchedule = (fn) => { if (!extraSchedules.includes(fn)) extraSchedules.push(fn); };
 
-export const botReady = () => !!(botUrl() && inTelegram);
+export const botReady = () => !!(botUrl() && loggedIn());
 function needBot() {
   if (!botUrl()) throw new Error('Бот не подключён — Настройки → Напоминания в Telegram');
-  if (!inTelegram) throw new Error('Работает, только когда приложение открыто в Telegram');
+  if (!loggedIn()) throw new Error('Войдите по коду из Telegram — Настройки → Вход');
 }
 // Отправить текст в чат прямо сейчас
 export async function sendText(text) { needBot(); return api('/api/send', 'POST', { text }); }
@@ -91,7 +92,7 @@ export async function sendFile(blob, filename, caption = '') {
   fd.append('file', blob, filename);
   fd.append('filename', filename);
   if (caption) fd.append('caption', caption);
-  const r = await fetch(botUrl() + '/api/send-file', { method: 'POST', headers: { 'X-Init-Data': W?.initData || '' }, body: fd });
+  const r = await fetch(botUrl() + '/api/send-file', { method: 'POST', headers: { ...authHeaders() }, body: fd });
   let j = null;
   try { j = await r.json(); } catch (e) { /* нет */ }
   if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `ошибка ${r.status}`);
@@ -100,7 +101,7 @@ export async function sendFile(blob, filename, caption = '') {
 
 export async function syncReminders(force = false) {
   if (!botUrl()) { Object.assign(remState, { state: 'off', message: '' }); emit(); return; }
-  if (!inTelegram) { Object.assign(remState, { state: 'browser', message: '' }); emit(); return; }
+  if (!loggedIn()) { Object.assign(remState, { state: 'browser', message: '' }); emit(); return; }
   const items = buildSchedule();
   const h = hash(botUrl() + JSON.stringify(items));
   const last = Number(lsGet('kb_remAt') || 0);

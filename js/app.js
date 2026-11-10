@@ -1,6 +1,8 @@
 // Точка входа «Книги кухни»
 
-import { initTelegram } from './tg.js';
+import { initTelegram, inTelegram } from './tg.js';
+import { session, standalone } from './auth.js';
+import { showLoginScreen } from './views/login.js';
 import { applyTheme } from './theme.js';
 import * as S from './store.js';
 import { registerTab, setTab, initNav, top, refresh, toast, getTab } from './ui.js';
@@ -34,6 +36,21 @@ async function main() {
   initTelegram();
   applyTheme();
   await S.loadLocal();
+  if (standalone()) document.documentElement.classList.add('standalone');
+  // Вне Telegram (приложение на экране «Домой», браузер): вход по коду из Telegram
+  if (!inTelegram && !session()) {
+    let skipped = false;
+    try { skipped = localStorage.getItem('kb_noLogin') === '1'; } catch (e) { /* нет */ }
+    if (!skipped) {
+      const ok = await showLoginScreen({ first: true });
+      if (!ok) try { localStorage.setItem('kb_noLogin', '1'); } catch (e) { /* нет */ }
+    }
+  }
+  S.onLoggedOut(() => {
+    toast('Вход на этом устройстве отменён — войдите снова по коду', 'error');
+    setTimeout(() => showLoginScreen({ first: false }), 800);
+  });
+  if (!inTelegram && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   try { wipeLegacyPrep(); cleanupOldOnce(); } catch (e) { console.error(e); }
   registerTab('ttk', () => (ttkState.view === 'ideas' ? ideasList() : recipesList()));
   registerTab('prep', prepScreen);

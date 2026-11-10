@@ -4,7 +4,10 @@ import { html, raw, fmtDateTime, plural, blobToDataURL, dataURLToBlob } from '..
 import * as S from '../store.js';
 import { push, refresh, toast, confirmDialog, onActs, actionSheet, promptSheet, pickFile, showText, sheet } from '../ui.js';
 import { inTelegram, copyText, haptic } from '../tg.js';
-import { photoAll, photoPut, photoClear } from '../idb.js';
+import { loggedIn, session, clearSession } from '../auth.js';
+import { showLoginScreen } from './login.js';
+import { photoPut, photoClear } from '../idb.js';
+import { photoRecord } from '../photos.js';
 import { icon, busy, segmented } from './common.js';
 import { getThemeMode, setThemeMode } from '../theme.js';
 import { botUrl, setBotUrl, remState, testBot, syncReminders, botReady, sendFile } from '../reminders.js';
@@ -20,34 +23,112 @@ function syncBlock() {
   const s = S.sync;
   let state, cls = '';
   if (s.mode === 'local') {
-    state = inTelegram ? 'Облако Telegram недоступно в этой версии приложения Telegram — данные только на устройстве.' : 'Открыто в браузере: данные хранятся только в этом браузере. Облако работает, когда приложение открыто в Telegram.';
+    state = 'Вход не выполнен — данные хранятся только на этом устройстве. Войдите по коду из Telegram (блок ниже), чтобы данные были общими с Telegram.';
     cls = 'warn';
   } else if (s.state === 'syncing') state = 'Синхронизация…';
   else if (s.state === 'ok') { state = `Синхронизировано ${fmtDateTime(s.lastSync)}`; cls = 'ok'; }
   else if (s.state === 'newer') { state = 'Данные в облаке записаны более новой версией приложения. Закройте и откройте приложение заново, чтобы обновиться.'; cls = 'warn'; }
-  else if (s.state === 'toobig') { state = 'Облако Telegram переполнено (лимит ~1024 ячейки по 4 КБ). Данные сохранены на устройстве. Удалите лишнее или сделайте резервную копию.'; cls = 'err'; }
+  else if (s.state === 'toobig') { state = 'Облако Telegram переполнено (лимит ~1024 ячейки по 4 КБ). Данные сохранены на устройстве и в облаке бота.'; cls = 'err'; }
   else if (s.state === 'error') { state = `Ошибка синхронизации: ${s.error}. Данные сохранены на устройстве, попробуем ещё раз.`; cls = 'err'; }
   else state = s.lastSync ? `Последняя синхронизация ${fmtDateTime(s.lastSync)}` : 'Ещё не синхронизировано';
   return html`<div class="card sync-card">
     <div class="card-title">Синхронизация</div>
     <div class="sync-state ${cls}">${state}</div>
-    ${s.usage ? html`<div class="muted small">Облако: занято ${s.usage.keys} из ${s.usage.max} ячеек</div>` : ''}
-    ${s.recovered ? html`<div class="muted small">Последняя запись в облако оборвалась — данные восстановлены из предыдущей целой копии.</div>` : ''}
+    ${s.usage && s.tg ? html`<div class="muted small">Облако Telegram: занято ${s.usage.keys} из ${s.usage.max} ячеек</div>` : ''}
+    ${s.recovered ? html`<div class="muted small">Последняя запись в облако Telegram оборвалась — данные восстановлены из предыдущей целой копии.</div>` : ''}
     <ul class="info">
-      <li><b>Тексты</b> (ТТК, идеи, оборудование, заготовки) — в облаке Telegram и копия на телефоне.</li>
-      <li><b>Фото</b> — только на этом телефоне. В облако не попадают. Сохраняйте резервную копию файлом.</li>
+      ${s.srv ? html`<li><b>Всё, включая фото,</b> — в облаке бота: одинаково в Telegram и в приложении на телефоне.</li>` : ''}
+      ${s.tg ? html`<li><b>Тексты</b> — ещё и в облаке Telegram (запасная копия).</li>` : ''}
+      <li>Копия всего — на этом устройстве, работает и без интернета.</li>
     </ul>
     ${s.mode === 'cloud' ? html`<button class="btn wide" data-act="sync">Синхронизировать сейчас</button>` : ''}
   </div>`;
 }
 
+// ---- Вход на других устройствах -----------------------------------------------------
+const ago = (ts) => {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 2) return 'только что';
+  if (m < 60) return `${m} мин назад`;
+  if (m < 48 * 60) return `${Math.round(m / 60)} ч назад`;
+  return fmtDateTime(ts);
+};
+const sessState = { list: null, error: '' };
+async function loadSessions() {
+  sessState.at = Date.now();
+  if (!loggedIn()) { sessState.list = []; return; }
+  try {
+    const r = await S.srvFetch('/api/sessions');
+    const j = await r.json();
+    sessState.list = j.ok ? j.sessions : [];
+    sessState.error = j.ok ? '' : (j.message || j.error || '');
+  } catch (e) { sessState.error = 'нет связи с облаком'; }
+}
+function devicesList() {
+  if (!sessState.list) return html`<div class="muted small">Загружаю список устройств…</div>`;
+  if (!sessState.list.length) return html`<div class="muted small">Вход на других устройствах не выполнен.</div>`;
+  return html`<div class="dev-list">${sessState.list.map((d) => html`<div class="dev-row">
+    <div class="dev-main"><b>${d.device || 'Устройство'}${d.current ? ' (это)' : ''}</b><small>вход ${fmtDateTime(d.created)} · был ${ago(d.last)}</small></div>
+    <button class="btn sm danger" data-act="dev-out" data-id="${d.id}" data-cur="${d.current ? '1' : ''}">Выйти</button>
+  </div>`)}</div>`;
+}
+function loginBlock() {
+  if (inTelegram) {
+    return html`<div class="group-title">Приложение на телефоне</div>
+      <div class="card login-card">
+        <p class="small">«Книга кухни» как отдельное приложение на экране «Домой» — открывается без Telegram, данные и фото те же.</p>
+        <button class="btn primary wide" data-act="login-code">${icon('key')} Получить код входа</button>
+        <div class="card-sub">Устройства со входом</div>
+        ${devicesList()}
+      </div>`;
+  }
+  const me = session();
+  if (!me) {
+    return html`<div class="group-title">Вход</div>
+      <div class="card login-card">
+        <p class="small">Войдите, чтобы данные были те же, что в Telegram: в Telegram откройте «Книгу кухни» → Настройки → «Получить код входа».</p>
+        <button class="btn primary wide" data-act="login">${icon('key')} Войти по коду</button>
+      </div>`;
+  }
+  return html`<div class="group-title">Вход</div>
+    <div class="card login-card">
+      <div class="sync-state ok">Вы вошли${me.name ? ` как ${me.name}` : ''}. Данные общие с Telegram.</div>
+      <div class="card-sub">Устройства со входом</div>
+      ${devicesList()}
+    </div>`;
+}
+
+async function showLoginCode() {
+  const done = busy('Получаю код…');
+  let j;
+  try {
+    const r = await S.srvFetch('/api/login-code', { method: 'POST' });
+    j = await r.json();
+    if (!j.ok) throw new Error(j.message || j.error);
+  } catch (e) { toast('Не получилось: ' + (e.message || e), 'error'); return; } finally { done(); }
+  const link = location.origin + location.pathname.replace(/index\.html$/, '');
+  const mins = Math.round((j.exp - Date.now()) / 60000);
+  await sheet({
+    title: 'Код входа',
+    body: html`<div class="login-code">${j.code.slice(0, 3)} ${j.code.slice(3)}</div>
+      <p class="hint center">Действует ${mins} мин, один раз.</p>
+      <ol class="steps-ol">
+        <li>Откройте в <b>Safari</b> ссылку <button class="linkish" data-copy="${link}">${link}</button> <button class="btn sm" data-copy="${link}">${icon('copy')} Скопировать</button></li>
+        <li>Внизу «Поделиться» → <b>«На экран „Домой“»</b>.</li>
+        <li>Откройте «Книгу кухни» с экрана и введите этот код.</li>
+      </ol>`,
+    onMount: (box) => box.addEventListener('click', async (e) => { const b = e.target.closest('[data-copy]'); if (b && await copyText(b.dataset.copy)) toast('Ссылка скопирована'); }),
+    buttons: [{ label: 'Готово', kind: 'primary', value: true }],
+  });
+  loadSessions().then(() => refresh());
+}
 
 function remBlock() {
   const url = botUrl();
   const r = remState;
   let state, cls = '';
   if (!url) state = 'Не подключено. Напоминания о заготовках и таймеры приходят в чат с ботом, когда подключён бот-напоминальщик.';
-  else if (!inTelegram) { state = 'Работает только когда приложение открыто в Telegram.'; cls = 'warn'; }
+  else if (!loggedIn()) { state = 'Работает после входа по коду из Telegram (блок «Вход» выше).'; cls = 'warn'; }
   else if (r.state === 'ok') { state = `Подключено. В очереди: ${r.count ?? 0}${r.next ? `, ближайшее ${fmtDateTime(r.next)}` : ''}.`; cls = 'ok'; }
   else if (r.state === 'syncing') state = 'Отправляю расписание боту…';
   else if (r.state === 'error') { state = `Ошибка: ${r.message}`; cls = 'err'; }
@@ -58,9 +139,9 @@ function remBlock() {
       <label class="fld"><span>Адрес бота-напоминальщика</span><input class="inp" id="botUrl" inputmode="url" value="${url}" placeholder="https://kniga-kuhni-bot.….workers.dev" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="row gap">
         <button class="btn primary grow" data-act="bot-save">${icon('send')} Сохранить и проверить</button>
-        ${url && inTelegram ? html`<button class="btn icon-only" data-act="bot-sync" aria-label="Обновить">↻</button>` : ''}
+        ${url && loggedIn() ? html`<button class="btn icon-only" data-act="bot-sync" aria-label="Обновить">↻</button>` : ''}
       </div>
-      <p class="hint">Как подключить бота — инструкция в репозитории: папка <b>bot</b>, файл README.</p>
+      <p class="hint">Бот — это и облако приложения. Менять адрес нужно, только если вы подняли своего бота (папка <b>bot</b>, файл README).</p>
     </div>`;
 }
 
@@ -74,6 +155,7 @@ export function settingsScreen() {
         <span class="mr-ico" style="--c:${color}">${icon(ico)}</span><span class="mr-label">${label}</span>${extra ? html`<small>${extra}</small>` : ''}</button>`;
       return html`
         ${syncBlock()}
+        ${loginBlock()}
         ${remBlock()}
         <div class="group-title">Оформление</div>
         <div class="card">${segmented('theme', getThemeMode(), [{ id: 'light', label: 'Светлая' }, { id: 'dark', label: 'Тёмная' }, { id: 'auto', label: 'Авто' }])}</div>
@@ -96,10 +178,14 @@ export function settingsScreen() {
         <p class="hint pad-x">В копии: ${c('recipes')} ТТК, ${c('ideas')} ${plural(c('ideas'), 'идея', 'идеи', 'идей')}, ${c('equipment')} поз. оборудования, ${c('prepItems')} поз. заготовок, ${c('invItems')} поз. склада, ${c('invCounts')} инвентаризаций.</p>
         <div class="group-title">Очистка</div>
         <div class="card list-card">${row('wipe', '#FF3B30', 'trash', html`<span class="danger-text">Удалить все данные</span>`)}</div>
-        <p class="hint pad-x">Удалит всё на этом устройстве и в облаке Telegram. Перед этим лучше сохранить резервную копию.</p>
+        <p class="hint pad-x">Удалит всё на этом устройстве и в облаках (бота и Telegram). Перед этим лучше сохранить резервную копию.</p>
         <div class="muted small center">Книга кухни ${S.APP_VERSION} · схема данных ${S.SCHEMA_VERSION}</div>`;
     },
     mount(el) {
+      if (loggedIn() && !sessState.loading && Date.now() - (sessState.at || 0) > 5000) {
+        sessState.loading = true;
+        loadSessions().then(() => { sessState.loading = false; if (el.isConnected && document.querySelector('.login-card')) refresh(); });
+      }
       onActs(el, {
         seg: (t) => { setThemeMode(t.dataset.v); haptic('select'); refresh(); },
         'bot-save': async () => {
@@ -107,13 +193,25 @@ export function settingsScreen() {
           if (v && !/^(https:\/\/[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)/i.test(v)) { toast('Адрес должен начинаться с https://', 'error'); return; }
           setBotUrl(v);
           if (!v) { toast('Напоминания отключены'); await syncReminders(true); refresh(); return; }
-          if (!inTelegram) { toast('Сохранено. Проверить можно только внутри Telegram'); refresh(); return; }
+          if (!loggedIn()) { toast('Сохранено. Проверить можно после входа'); refresh(); return; }
           const done = busy('Проверяю бота…');
           try { await testBot(); haptic('success'); toast('Бот работает — проверьте чат с ботом'); }
           catch (e) { toast('Не получилось: ' + (e.message || e), 'error'); }
           finally { done(); refresh(); }
         },
         'bot-sync': async () => { await syncReminders(true); refresh(); },
+        'login-code': showLoginCode,
+        login: () => showLoginScreen(),
+        'dev-out': async (t) => {
+          const cur = !!t.dataset.cur;
+          if (!(await confirmDialog(cur ? 'Выйти на этом устройстве? Данные останутся в облаке и в Telegram.' : 'Выйти на этом устройстве? Ему понадобится новый код.', 'Выйти', true))) return;
+          try {
+            await S.srvFetch('/api/sessions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.dataset.id }) });
+          } catch (e) { toast('Нет связи с облаком', 'error'); return; }
+          if (cur) { clearSession(); location.reload(); return; }
+          toast('Вход отменён');
+          await loadSessions(); refresh();
+        },
         sync: async () => { await S.syncNow(); refresh(); },
         list: (t) => push(listEditor(t.dataset.k)),
         'backup-file': backupFile,
@@ -164,8 +262,9 @@ async function makeBackup(withPhotos) {
     const used = new Set();
     for (const r of S.list('recipes')) for (const p of r.photos || []) used.add(p.id);
     out.photos = [];
-    for (const p of await photoAll()) {
-      if (!used.has(p.id)) continue;
+    for (const id of used) {
+      const p = await photoRecord(id).catch(() => null);
+      if (!p) continue;
       out.photos.push({ id: p.id, w: p.w, h: p.h, createdAt: p.createdAt, data: await blobToDataURL(p.blob) });
     }
   }

@@ -5,7 +5,8 @@
 import { html, uid, clone, dateISO, addDays, fmtDayLong, fmtClock, plural } from '../util.js';
 import * as S from '../store.js';
 import { push, back, refresh, toast, confirmDialog, onActs, promptSheet, actionSheet, sheet } from '../ui.js';
-import { haptic, inTelegram } from '../tg.js';
+import { haptic } from '../tg.js';
+import { loggedIn } from '../auth.js';
 import { icon, fab, emptyState, segmented, busy, saveFile } from './common.js';
 import { registerPlanSection } from '../plan.js';
 import { registerSchedule, botReady, sendFile } from '../reminders.js';
@@ -296,7 +297,7 @@ function editorScreen({ item, name = '' }) {
         remind: () => {
           d.remind = !d.remind;
           if (d.remind && !d.time) toast('Укажите время «Заполнить к» — от него считается напоминание');
-          if (d.remind && !inTelegram) toast('Напоминания работают, когда приложение открыто в Telegram');
+          if (d.remind && !loggedIn()) toast('Напоминания работают после входа: Настройки → Вход');
           rer();
         },
         save: () => {

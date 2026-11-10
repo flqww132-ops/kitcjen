@@ -139,7 +139,7 @@ async function seed(page) {
   const browser = await chromium.launch();
   const report = {};
   for (const pass of PASSES.filter((p) => !ONLY || p.name.includes(ONLY))) {
-    const mock = fs.readFileSync(path.join(__dirname, 'tgmock.js'), 'utf8').replace(/initData: '[^']*'/, 'initData: ' + JSON.stringify(make('123456:TESTTOKEN', 777)))
+    const mock = fs.readFileSync(path.join(__dirname, 'tgmock.js'), 'utf8').replace(/initData: '[^']*'/, 'initData: ' + JSON.stringify(make('123456:TESTTOKEN', 10000 + Math.floor(Math.random() * 1e6))))
       .replace("platform: 'android'", "platform: 'ios'").replace("initData:", "initDataUnsafe: { user: { id: 777, first_name: 'Артём' } }, initData:");
     const ctx = await browser.newContext({ ...devices[pass.device], locale: 'ru-RU', timezoneId: 'Europe/Moscow', permissions: ['clipboard-read', 'clipboard-write'] });
     await ctx.route('https://telegram.org/js/telegram-web-app.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: mock }));
@@ -224,7 +224,8 @@ async function seed(page) {
     await step('shift-journal', async () => { await back(); await back(); await tab('shift'); await seg('view', 'journal'); });
     await step('shift-day', async () => { await page.click('.jcard >> nth=0'); await W(); });
     // Настройки
-    await step('settings', async () => { await back(); await tab('settings'); });
+    await step('settings', async () => { await back(); await tab('settings'); await W(800); });
+    await step('settings-code', async () => { await page.click('[data-act="login-code"]'); await W(1200); }, true);
 
     report[pass.name] = { ver, res, errors };
     const bad = res.filter((r) => r.issues.length);

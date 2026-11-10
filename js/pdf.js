@@ -1,7 +1,7 @@
 // ТТК в PDF (A4) с фото. Библиотека jsPDF и шрифт с кириллицей грузятся с CDN только при создании PDF.
 
 import { loadLib } from './importfile.js';
-import { photoGet } from './idb.js';
+import { photoRecord } from './photos.js';
 import { fmtNum, blobToDataURL, toBase, fmtBase, fmtDayLong } from './util.js';
 import { nameOf } from './store.js';
 
@@ -66,7 +66,7 @@ export async function recipePdf(r, { photos = [], factor = 1, scaledNote = '' } 
   // Фото
   const imgs = [];
   for (const p of photos) {
-    const rec = await photoGet(p.id).catch(() => null);
+    const rec = await photoRecord(p.id).catch(() => null);
     if (rec) imgs.push({ url: await blobToDataURL(rec.blob), w: rec.w || 4, h: rec.h || 3, kind: p.kind });
   }
   if (imgs.length) {

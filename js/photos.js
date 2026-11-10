@@ -1,8 +1,9 @@
-// Фото: сжимаем до ~1280px JPEG и храним в IndexedDB только на этом устройстве.
+// Фото: сжимаем до ~1280px JPEG и храним в IndexedDB на устройстве + копия в облаке бота (если выполнен вход).
 
 import { photoPut, photoGet, photoDel, photoKeys } from './idb.js';
 import { uid } from './util.js';
-import { list } from './store.js';
+import { list, srvFetch, onServerPhotos } from './store.js';
+import { loggedIn } from './auth.js';
 
 const MAX = 1280;
 const QUALITY = 0.8;
@@ -32,16 +33,61 @@ export async function addPhoto(file) {
     const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', QUALITY));
     const id = 'ph_' + uid();
     await photoPut({ id, blob, w, h, createdAt: Date.now() });
+    uploadPhoto(id).catch(() => {}); // не вышло — отправим при следующей синхронизации
     return id;
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
-// URL для <img>; null — фото нет на этом устройстве
+// ---- Облако бота ----
+async function uploadPhoto(id) {
+  if (!loggedIn()) return;
+  const rec = await photoGet(id);
+  if (!rec) return;
+  const r = await srvFetch('/api/photo/' + encodeURIComponent(id), { method: 'PUT', headers: { 'X-Photo-W': String(rec.w || 0), 'X-Photo-H': String(rec.h || 0) }, body: rec.blob });
+  if (!r.ok) throw new Error('upload ' + r.status);
+}
+const loading = new Map();
+function downloadPhoto(id) {
+  if (!loggedIn()) return Promise.resolve(null);
+  if (!loading.has(id)) {
+    loading.set(id, (async () => {
+      try {
+        const r = await srvFetch('/api/photo/' + encodeURIComponent(id));
+        if (!r.ok) return null;
+        const blob = await r.blob();
+        const rec = { id, blob: new Blob([blob], { type: 'image/jpeg' }), w: Number(r.headers.get('X-Photo-W')) || 0, h: Number(r.headers.get('X-Photo-H')) || 0, createdAt: Date.now() };
+        await photoPut(rec);
+        return rec;
+      } catch (e) { return null; } finally { loading.delete(id); }
+    })());
+  }
+  return loading.get(id);
+}
+// После синхронизации: отправить в облако фото, которых там ещё нет
+let uploading = false;
+onServerPhotos(async (onServer) => {
+  if (uploading) return;
+  uploading = true;
+  try {
+    const have = new Set(onServer);
+    const used = new Set();
+    for (const r of list('recipes')) for (const p of r.photos || []) used.add(p.id);
+    const keys = await photoKeys();
+    for (const id of keys) if (used.has(id) && !have.has(id)) await uploadPhoto(id).catch(() => {});
+  } finally { uploading = false; }
+});
+
+// Запись фото { blob, w, h }: с устройства, а если нет — из облака
+export async function photoRecord(id) {
+  return (await photoGet(id).catch(() => null)) || (await downloadPhoto(id));
+}
+
+// URL для <img>; null — фото нет ни на устройстве, ни в облаке
 export async function photoURL(id) {
   if (urlCache.has(id)) return urlCache.get(id);
-  const rec = await photoGet(id).catch(() => null);
+  const rec = (await photoGet(id).catch(() => null)) || (await downloadPhoto(id));
   const url = rec ? URL.createObjectURL(rec.blob) : null;
   if (url) urlCache.set(id, url); // «нет фото» не запоминаем — оно может появиться после восстановления
   return url;

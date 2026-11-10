@@ -786,3 +786,38 @@ body.swiping { overflow-x: hidden; }
 body.swiping #screen > * { will-change: transform; }
 #screen.swipe-in > * { animation: swipeIn .24s cubic-bezier(.2,.8,.2,1); }
 @keyframes swipeIn { from { transform: translateX(-22%); opacity: .5; } to { transform: none; opacity: 1; } }
+
+/* ---- 2.0: приложение на экране «Домой», вход по коду ---- */
+html.standalone { --safe-t: env(safe-area-inset-top, 0px); }
+html.standalone #topbar { height: calc(50px + var(--safe-t)); padding-top: var(--safe-t); }
+html.standalone .toolbar.sticky { top: calc(50px + var(--safe-t)); }
+html.standalone #toast { top: calc(8px + var(--safe-t)); }
+.login-view { position: fixed; inset: 0; z-index: 120; background: var(--bg, #FBEFE3); display: flex; align-items: center; justify-content: center; padding: calc(20px + env(safe-area-inset-top, 0px)) 18px calc(20px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+html.light .login-view { background: linear-gradient(180deg, #FFE7D1, #FBEFE3 45%); }
+html.dark .login-view { background: linear-gradient(180deg, #2A1A10, #121212 45%); }
+.login-box { width: 100%; max-width: 380px; text-align: center; }
+.login-logo { width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 22px; display: flex; align-items: center; justify-content: center; font-size: 44px; background: linear-gradient(180deg, var(--accent), var(--accent2)); box-shadow: 0 14px 30px -10px rgba(255, 90, 20, .6); }
+.login-box h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
+.login-lead { color: var(--hint); margin: 0 0 14px; }
+.steps-ol { text-align: left; margin: 0 0 16px; padding-left: 22px; line-height: 1.45; }
+.steps-ol li { margin-bottom: 6px; }
+.login-inp { text-align: center; font-size: 30px; font-weight: 700; letter-spacing: .12em; height: 62px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.login-err { color: var(--danger); min-height: 20px; font-size: 14px; margin-bottom: 8px; }
+.login-box .btn { margin-bottom: 8px; }
+.login-code { font-size: 44px; font-weight: 800; letter-spacing: .1em; text-align: center; color: var(--accent-text); font-variant-numeric: tabular-nums; margin: 4px 0; }
+.login-card p.small { margin: 0 0 12px; }
+.card-sub { font-size: 13px; font-weight: 600; color: var(--hint); text-transform: uppercase; letter-spacing: .03em; margin: 16px 0 6px; }
+.dev-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--sep); }
+.dev-row:last-child { border-bottom: 0; }
+.dev-main { flex: 1; min-width: 0; }
+.dev-main b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.dev-main small { color: var(--hint); font-size: 13px; }
+.steps-ol .linkish { overflow-wrap: anywhere; text-align: left; }
+/* План в Telegram: строка расписания помещается на узком экране */
+.sched .seg { min-width: 0; }
+.sched .seg button { min-width: 0; padding: 0 4px; }
+@media (max-width: 389px) {
+  .sched .time-mid { width: 100px; font-size: 16px; padding-left: 8px; padding-right: 8px; }
+  .sched .seg button { font-size: 13px; }
+  .sched .icon-btn { width: 34px; }
+}
