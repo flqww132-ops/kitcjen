@@ -10,7 +10,7 @@ import { uid, hash, norm, debounce, clone, num } from './util.js';
 import { loggedIn, authHeaders, clearSession, DEFAULT_BOT } from './auth.js';
 
 export const SCHEMA_VERSION = 7;
-export const APP_VERSION = '2.0.1'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
+export const APP_VERSION = '2.0.2'; // версия приложения: мелкие правки +0.0.1, средние +0.1.0, крупные +1.0.0
 
 export const COLLECTIONS = [
   'recipes',     // ТТК
